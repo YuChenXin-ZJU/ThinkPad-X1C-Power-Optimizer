@@ -292,6 +292,20 @@ fn install_auto_apply_tasks() -> Result<TaskInstallResult, String> {
         }
     }
 
+    let start_label = format!("{} (start)", AUTO_APPLY_TASK_WATCHDOG);
+    match run_task_now(AUTO_APPLY_TASK_WATCHDOG) {
+        Ok(_) => tasks.push(TaskItemResult {
+            name: start_label,
+            ok: true,
+            error: None,
+        }),
+        Err(e) => tasks.push(TaskItemResult {
+            name: start_label,
+            ok: false,
+            error: Some(e),
+        }),
+    }
+
     Ok(TaskInstallResult {
         script_path: script_path.to_string_lossy().to_string(),
         tasks,
@@ -724,7 +738,9 @@ fn register_event_task_with_schtasks(
         "/RU".to_string(),
         "SYSTEM".to_string(),
     ];
-    run_capture_dynamic("schtasks", &args).map(|_| ())
+    run_capture_dynamic("schtasks", &args)?;
+    update_task_power_settings(full_name, false)?;
+    Ok(())
 }
 
 fn register_logon_task_with_powershell(
@@ -780,7 +796,29 @@ try {{
         settings_block = settings_block,
     );
 
+    run_powershell_dynamic(&script)?;
+    update_task_power_settings(full_name, run_forever)?;
+    Ok(())
+}
+
+fn update_task_power_settings(full_name: &str, run_forever: bool) -> Result<(), String> {
+    let (task_path, task_name) = split_task_path_name(full_name);
+    let settings_block = if run_forever {
+        "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Compatibility Win8"
+    } else {
+        "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -Compatibility Win8"
+    };
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; Import-Module ScheduledTasks; {settings_block}; Set-ScheduledTask -TaskName '{}' -TaskPath '{}' -Settings $settings | Out-Null",
+        ps_quote(&task_name),
+        ps_quote(&task_path),
+        settings_block = settings_block,
+    );
     run_powershell_dynamic(&script).map(|_| ())
+}
+
+fn run_task_now(full_name: &str) -> Result<(), String> {
+    run_capture("schtasks", &["/Run", "/TN", full_name]).map(|_| ())
 }
 
 fn unregister_task_with_powershell(full_name: &str) -> Result<(), String> {
