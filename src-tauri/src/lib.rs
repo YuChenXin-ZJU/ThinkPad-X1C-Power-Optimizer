@@ -210,7 +210,6 @@ struct DcSetting {
 
 #[derive(Debug, Clone)]
 struct AcDcSetting {
-    subgroup_guid: String,
     setting_guid: String,
     ac_value: u32,
     dc_value: u32,
@@ -750,16 +749,15 @@ fn parse_ac_dc_settings_from_query(text: &str) -> Vec<AcDcSetting> {
     let mut ac_value: Option<u32> = None;
     let mut dc_value: Option<u32> = None;
 
-    let mut flush = |out: &mut Vec<AcDcSetting>,
+    let flush = |out: &mut Vec<AcDcSetting>,
                      subgroup: &mut Option<String>,
                      setting: &mut Option<String>,
                      ac_value: &mut Option<u32>,
                      dc_value: &mut Option<u32>| {
-        if let (Some(subgroup), Some(setting), Some(ac_value), Some(dc_value)) =
+        if let (Some(_subgroup), Some(setting), Some(ac_value), Some(dc_value)) =
             (subgroup.clone(), setting.clone(), *ac_value, *dc_value)
         {
             out.push(AcDcSetting {
-                subgroup_guid: subgroup,
                 setting_guid: setting,
                 ac_value,
                 dc_value,
