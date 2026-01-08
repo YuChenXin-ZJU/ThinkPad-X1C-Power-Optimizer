@@ -15,7 +15,7 @@
 
 - 查看当前机器的电源计划（Power Scheme）
 - 将电源计划备份为 `.pow` 文件（便于回滚/迁移）
-- 在不改变电池模式参数的前提下，让插电模式参数与电池模式保持一致（项目内称为插电更流畅）
+- 在不改变电池模式参数的前提下，让插电模式参数与电池模式保持一致（插电更流畅）
 - 可选：禁用 Lenovo ITS Power Mode Control 服务，降低第三方服务覆写电源策略的概率（可恢复）
 - 重置回 Windows 默认电源计划并尝试恢复 Lenovo ITS 服务
 
@@ -116,7 +116,7 @@ Windows 的每个电源计划（scheme）都包含大量电源设置。大多数
 
 ### 支持的系统
 - Windows 10 / Windows 11（x64）
-- 需要 WebView2 Runtime（Windows 11 一般自带；部分 Windows 10 需安装）
+- 需要 WebView2 Runtime
 
 ### 权限要求
 - 查看本机电源计划通常不需要管理员权限
@@ -131,20 +131,20 @@ Windows 的每个电源计划（scheme）都包含大量电源设置。大多数
   `%USERPROFILE%\\.Thinkpad_Power\\`
 
 ## 免责声明
-本软件为个人实验性质工具，可能修改系统电源计划与相关服务配置。使用本软件所产生的任何风险与后果（包括但不限于数据丢失、系统异常、硬件损坏或其他损失）均由使用者自行承担，作者不对此承担责任。建议在操作前先备份电源计划，并确认已了解相关命令含义。
+本软件为个人实验性质工具，可能修改系统电源计划与相关服务配置。使用本软件所产生的任何风险与后果（包括但不限于数据丢失、系统异常、硬件损坏或其他损失）均由使用者自行承担，作者不对此承担责任。
 
 ---
 
 # English
 
 ## Overview
-This is a Windows desktop utility (Tauri). It primarily targets ThinkPad X1 Carbon (but can work on other Windows PCs). It provides one-click actions to:
+This is a Windows desktop utility (Tauri). It targets ThinkPad X1 Carbon and can work on other Windows PCs. It provides one-click actions to:
 
-- List Windows power plans (power schemes)
-- Backup power plans into `.pow` files (for rollback/migration)
-- Keep plugged-in (AC) values consistent with battery (DC) values for the active plan (Smoother on AC)
-- Optionally disable Lenovo ITS Power Mode Control to reduce vendor overrides (restorable)
-- Reset Windows power schemes to defaults and attempt to restore Lenovo ITS
+- List power plans
+- Backup power plans to `.pow`
+- Keep AC values consistent with DC values
+- Optionally disable Lenovo ITS Power Mode Control (restorable)
+- Reset power schemes and attempt to restore Lenovo ITS
 
 The app uses built-in Windows commands (`powercfg`, `sc`, `net`, `schtasks`, etc.) and does not require network access.
 
