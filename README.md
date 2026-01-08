@@ -53,7 +53,7 @@ Windows ????????scheme?????????????????????????
 2. ???
    - ????????????`sc getkeyname "Lenovo ITS Power Mode Control"`?
    - ???????????????????
-     `Desktop\ThinkPadX1PowerOptimize\its-service-backup.json`
+     `Desktop\\ThinkPadX1PowerOptimize\\its-service-backup.json`
    - ???????`sc stop <service>`
    - ????????`sc config <service> start= disabled`
 
@@ -93,7 +93,7 @@ Windows ????????scheme?????????????????????????
 - ???? `powercfg /export` ?? `.pow`
 - ????????????????
 - ??????
-  `Desktop\ThinkPadX1PowerOptimize\power-plans-backup-<timestamp>\`
+  `Desktop\\ThinkPadX1PowerOptimize\\power-plans-backup-<timestamp>\\`
 
 ### ??????????????????
 - ???????????????????????
@@ -126,9 +126,9 @@ Windows ????????scheme?????????????????????????
 ### ???????
 - ???????????
 - ????? ITS ?????????????
-  `Desktop\ThinkPadX1PowerOptimize\`
+  `Desktop\\ThinkPadX1PowerOptimize\\`
 - ???????????
-  `%USERPROFILE%\.Thinkpad_Power\`
+  `%USERPROFILE%\\.Thinkpad_Power\\`
 
 ## ????
 
@@ -184,7 +184,7 @@ The ?Smoother on AC + disable Lenovo ITS (advanced)? action:
 2. Then:
    - Resolves the service name (`sc getkeyname "Lenovo ITS Power Mode Control"`)
    - Backs up start type and running state to:
-     `Desktop\ThinkPadX1PowerOptimize\its-service-backup.json`
+     `Desktop\\ThinkPadX1PowerOptimize\\its-service-backup.json`
    - Stops it (`sc stop <service>`)
    - Disables it (`sc config <service> start= disabled`)
 
@@ -216,7 +216,7 @@ Current implementation:
 ## Features
 
 - **List power plans**: show all schemes and mark the active one; includes brief notes for common built-in GUIDs.
-- **Backup power plans (Admin required)**: exports `.pow` files to `Desktop\ThinkPadX1PowerOptimize\power-plans-backup-<timestamp>\`.
+- **Backup power plans (Admin required)**: exports `.pow` files to `Desktop\\ThinkPadX1PowerOptimize\\power-plans-backup-<timestamp>\\`.
 - **Smoother on AC (Admin required)**: makes plugged-in values match battery values (skips sleep subgroup); the output panel shows updated/failed/skipped counts.
 - **Smoother on AC + disable Lenovo ITS (Admin required)**: additionally disables Lenovo ITS Power Mode Control (restorable).
 - **Auto reapply (Admin required)**: re-applies on logon/resume/power change and starts a background watchdog to keep values consistent after the app closes.
@@ -231,8 +231,8 @@ Current implementation:
 ## Data & Files
 
 - No data is uploaded.
-- Backups and ITS backups are written to: `Desktop\ThinkPadX1PowerOptimize\`
-- Auto reapply scripts are written to: `%USERPROFILE%\.Thinkpad_Power\`
+- Backups and ITS backups are written to: `Desktop\\ThinkPadX1PowerOptimize\\`
+- Auto reapply scripts are written to: `%USERPROFILE%\\.Thinkpad_Power\\`
 
 ## Disclaimer
 
