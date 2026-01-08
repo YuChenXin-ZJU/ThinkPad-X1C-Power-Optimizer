@@ -27,6 +27,11 @@ const AUTO_APPLY_SCRIPT_NAME: &str = "apply-ac-equals-dc.ps1";
 const AUTO_APPLY_WATCH_SCRIPT_NAME: &str = "apply-ac-equals-dc-watch.ps1";
 const AUTO_APPLY_BASELINE_NAME: &str = "baseline.json";
 const AUTO_APPLY_DIR_NAME: &str = ".Thinkpad_Power";
+const POWER_POLICY_SERVICE_BACKUP_NAME: &str = "power-policy-services-backup.json";
+const SERVICE_STATUS_DISABLED: &str = "disabled";
+const SERVICE_STATUS_RESTORED: &str = "restored";
+const SERVICE_STATUS_NOT_FOUND: &str = "not_found";
+const SERVICE_STATUS_FAILED: &str = "failed";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PowerPlan {
@@ -56,14 +61,14 @@ struct OptimizeResult {
     updated_settings: u32,
     failed_settings: u32,
     skipped_sleep_settings: u32,
-    its: Option<ServiceActionResult>,
+    services: Vec<ServiceActionResult>,
     messages: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ResetResult {
     scheme_guid: String,
-    its: Option<ServiceActionResult>,
+    services: Vec<ServiceActionResult>,
     messages: Vec<String>,
 }
 
@@ -87,7 +92,7 @@ struct ProcessorAlignResult {
 struct ServiceActionResult {
     display_name: String,
     service_name: Option<String>,
-    ok: bool,
+    status: String,
     error: Option<String>,
 }
 
@@ -98,6 +103,79 @@ struct ServiceBackup {
     start_type: u32,
     was_running: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ServiceBackupFile {
+    services: Vec<ServiceBackup>,
+}
+
+#[derive(Debug, Clone)]
+struct ServiceCandidate {
+    label: &'static str,
+    display_names: &'static [&'static str],
+    service_names: &'static [&'static str],
+}
+
+const POWER_POLICY_SERVICE_CANDIDATES: &[ServiceCandidate] = &[
+    ServiceCandidate {
+        label: "Lenovo ITS Power Mode Control",
+        display_names: &[
+            "Lenovo ITS Power Mode Control",
+            "Lenovo Intelligent Thermal Solution Service",
+        ],
+        service_names: &["LITSSVC", "LITSSvc"],
+    },
+    ServiceCandidate {
+        label: "Lenovo Vantage Service",
+        display_names: &["Lenovo Vantage Service"],
+        service_names: &["LenovoVantageService"],
+    },
+    ServiceCandidate {
+        label: "Lenovo Service Engine",
+        display_names: &["Lenovo Service Engine"],
+        service_names: &["LenovoServiceAS"],
+    },
+    ServiceCandidate {
+        label: "Lenovo System Interface Foundation",
+        display_names: &["Lenovo System Interface Foundation"],
+        service_names: &["LISFService"],
+    },
+    ServiceCandidate {
+        label: "Lenovo Smart Standby",
+        display_names: &["Lenovo Smart Standby"],
+        service_names: &["LenovoSmartStandby"],
+    },
+    ServiceCandidate {
+        label: "Lenovo Modern ImController",
+        display_names: &["Lenovo.Modern.ImController"],
+        service_names: &["ImControllerService"],
+    },
+    ServiceCandidate {
+        label: "Lenovo Platform Service",
+        display_names: &["Lenovo Platform Service"],
+        service_names: &["LPlatSvc"],
+    },
+    ServiceCandidate {
+        label: "Intel DPTF",
+        display_names: &["Intel(R) Dynamic Platform and Thermal Framework"],
+        service_names: &["dptftcs"],
+    },
+    ServiceCandidate {
+        label: "Intel Dynamic Tuning",
+        display_names: &["Intel(R) Dynamic Tuning Service"],
+        service_names: &["ipfsvc"],
+    },
+    ServiceCandidate {
+        label: "Intel Energy Server",
+        display_names: &["Intel(R) Energy Server Service", "Energy Server Service"],
+        service_names: &["esifsvc"],
+    },
+    ServiceCandidate {
+        label: "ThinkPad Power Management",
+        display_names: &["ThinkPad Power Management Service"],
+        service_names: &["IBMPMSVC"],
+    },
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TaskItemResult {
@@ -285,10 +363,10 @@ fn optimize_active_power_plan(disable_its: bool) -> Result<OptimizeResult, Strin
 
     let _ = run_capture("powercfg", &["/setactive", scheme_guid.as_str()]);
 
-    let its = if disable_its {
-        Some(disable_its_power_mode_control()?)
+    let services = if disable_its {
+        disable_power_policy_services()?
     } else {
-        None
+        Vec::new()
     };
 
     Ok(OptimizeResult {
@@ -296,7 +374,7 @@ fn optimize_active_power_plan(disable_its: bool) -> Result<OptimizeResult, Strin
         updated_settings: updated,
         failed_settings: failed,
         skipped_sleep_settings: skipped_sleep,
-        its,
+        services,
         messages,
     })
 }
@@ -309,11 +387,11 @@ fn reset_power_plans_and_restore_its() -> Result<ResetResult, String> {
     messages.push("已执行 powercfg /restoredefaultschemes".to_string());
     messages.push(format!("已尝试切换到平衡模式: {}", DEFAULT_BALANCED_GUID));
 
-    let its = Some(restore_its_power_mode_control()?);
+    let services = restore_power_policy_services()?;
 
     Ok(ResetResult {
         scheme_guid: DEFAULT_BALANCED_GUID.to_string(),
-        its,
+        services,
         messages,
     })
 }
@@ -1094,104 +1172,239 @@ fn sanitize_windows_filename(path: &Path) -> PathBuf {
     path.with_file_name(sanitized)
 }
 
-fn disable_its_power_mode_control() -> Result<ServiceActionResult, String> {
+fn disable_power_policy_services() -> Result<Vec<ServiceActionResult>, String> {
     let base_dir = ensure_app_desktop_dir()?;
-    let state_path = base_dir.join("its-service-backup.json");
+    let state_path = base_dir.join(POWER_POLICY_SERVICE_BACKUP_NAME);
 
-    let service_name = match get_service_name_by_display(ITS_POWER_MODE_CONTROL_DISPLAY_NAME) {
-        Ok(v) => v,
-        Err(e) => {
-            return Ok(ServiceActionResult {
-                display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
-                service_name: None,
-                ok: false,
-                error: Some(e),
-            })
-        }
-    };
+    let mut results = Vec::new();
+    let mut backups = Vec::new();
 
-    let (start_type, was_running) = match get_service_start_and_running(&service_name) {
-        Ok(v) => v,
-        Err(e) => {
-            return Ok(ServiceActionResult {
-                display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
-                service_name: Some(service_name),
-                ok: false,
-                error: Some(e),
-            })
-        }
-    };
-
-    let backup = ServiceBackup {
-        display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
-        service_name: service_name.clone(),
-        start_type,
-        was_running,
-    };
-    let json = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
-    fs::write(&state_path, json).map_err(|e| format!("写入服务备份失败: {e}"))?;
-
-    let _ = run_capture("sc", &["stop", service_name.as_str()]);
-    match run_capture("sc", &["config", service_name.as_str(), "start=", "disabled"]) {
-        Ok(_) => Ok(ServiceActionResult {
-            display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
-            service_name: Some(service_name),
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(ServiceActionResult {
-            display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
-            service_name: Some(service_name),
-            ok: false,
-            error: Some(e),
-        }),
-    }
-}
-
-fn restore_its_power_mode_control() -> Result<ServiceActionResult, String> {
-    let base_dir = ensure_app_desktop_dir()?;
-    let state_path = base_dir.join("its-service-backup.json");
-
-    if let Ok(text) = fs::read_to_string(&state_path) {
-        if let Ok(backup) = serde_json::from_str::<ServiceBackup>(&text) {
-            let start_value = match backup.start_type {
-                2 => "auto",
-                3 => "demand",
-                _ => "auto",
-            };
-            let _ = run_capture("sc", &["config", backup.service_name.as_str(), "start=", start_value]);
-            if backup.was_running {
-                let _ = run_capture("sc", &["start", backup.service_name.as_str()]);
+    for candidate in POWER_POLICY_SERVICE_CANDIDATES {
+        let resolved = match resolve_service_name(candidate) {
+            Ok(v) => v,
+            Err(e) => {
+                results.push(ServiceActionResult {
+                    display_name: candidate.label.to_string(),
+                    service_name: None,
+                    status: SERVICE_STATUS_FAILED.to_string(),
+                    error: Some(e),
+                });
+                continue;
             }
-            return Ok(ServiceActionResult {
-                display_name: backup.display_name,
-                service_name: Some(backup.service_name),
-                ok: true,
+        };
+
+        let service_name = match resolved {
+            Some(v) => v,
+            None => {
+                results.push(ServiceActionResult {
+                    display_name: candidate.label.to_string(),
+                    service_name: None,
+                    status: SERVICE_STATUS_NOT_FOUND.to_string(),
+                    error: None,
+                });
+                continue;
+            }
+        };
+
+        let (start_type, was_running) = match get_service_start_and_running(&service_name) {
+            Ok(v) => v,
+            Err(e) => {
+                results.push(ServiceActionResult {
+                    display_name: candidate.label.to_string(),
+                    service_name: Some(service_name),
+                    status: SERVICE_STATUS_FAILED.to_string(),
+                    error: Some(e),
+                });
+                continue;
+            }
+        };
+
+        backups.push(ServiceBackup {
+            display_name: candidate.label.to_string(),
+            service_name: service_name.clone(),
+            start_type,
+            was_running,
+        });
+
+        let _ = run_capture("sc", &["stop", service_name.as_str()]);
+        match run_capture("sc", &["config", service_name.as_str(), "start=", "disabled"]) {
+            Ok(_) => results.push(ServiceActionResult {
+                display_name: candidate.label.to_string(),
+                service_name: Some(service_name),
+                status: SERVICE_STATUS_DISABLED.to_string(),
                 error: None,
+            }),
+            Err(e) => results.push(ServiceActionResult {
+                display_name: candidate.label.to_string(),
+                service_name: Some(service_name),
+                status: SERVICE_STATUS_FAILED.to_string(),
+                error: Some(e),
+            }),
+        }
+    }
+
+    if !backups.is_empty() {
+        let payload = ServiceBackupFile { services: backups };
+        let json = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+        if let Err(e) = fs::write(&state_path, json) {
+            results.push(ServiceActionResult {
+                display_name: "Backup file".to_string(),
+                service_name: Some(state_path.to_string_lossy().to_string()),
+                status: SERVICE_STATUS_FAILED.to_string(),
+                error: Some(format!("Write backup failed: {e}")),
             });
         }
     }
 
+    Ok(results)
+}
+
+fn restore_power_policy_services() -> Result<Vec<ServiceActionResult>, String> {
+    let base_dir = ensure_app_desktop_dir()?;
+    let state_path = base_dir.join(POWER_POLICY_SERVICE_BACKUP_NAME);
+    let legacy_path = base_dir.join("its-service-backup.json");
+
+    if let Ok(text) = fs::read_to_string(&state_path) {
+        if let Ok(backup_file) = serde_json::from_str::<ServiceBackupFile>(&text) {
+            let mut results = Vec::new();
+            for backup in backup_file.services {
+                let exists = service_exists(&backup.service_name)?;
+                if !exists {
+                    results.push(ServiceActionResult {
+                        display_name: backup.display_name,
+                        service_name: Some(backup.service_name),
+                        status: SERVICE_STATUS_NOT_FOUND.to_string(),
+                        error: None,
+                    });
+                    continue;
+                }
+
+                let start_value = start_type_to_value(backup.start_type);
+                let config_res = run_capture(
+                    "sc",
+                    &["config", backup.service_name.as_str(), "start=", start_value],
+                );
+                let mut ok = config_res.is_ok();
+                if backup.was_running && ok {
+                    ok = run_capture("sc", &["start", backup.service_name.as_str()]).is_ok();
+                }
+                if ok {
+                    results.push(ServiceActionResult {
+                        display_name: backup.display_name,
+                        service_name: Some(backup.service_name),
+                        status: SERVICE_STATUS_RESTORED.to_string(),
+                        error: None,
+                    });
+                } else {
+                    results.push(ServiceActionResult {
+                        display_name: backup.display_name,
+                        service_name: Some(backup.service_name),
+                        status: SERVICE_STATUS_FAILED.to_string(),
+                        error: config_res.err(),
+                    });
+                }
+            }
+            return Ok(results);
+        }
+    }
+
+    if let Ok(text) = fs::read_to_string(&legacy_path) {
+        if let Ok(backup) = serde_json::from_str::<ServiceBackup>(&text) {
+            let exists = service_exists(&backup.service_name)?;
+            if !exists {
+                return Ok(vec![ServiceActionResult {
+                    display_name: backup.display_name,
+                    service_name: Some(backup.service_name),
+                    status: SERVICE_STATUS_NOT_FOUND.to_string(),
+                    error: None,
+                }]);
+            }
+
+            let start_value = start_type_to_value(backup.start_type);
+            let _ = run_capture("sc", &["config", backup.service_name.as_str(), "start=", start_value]);
+            if backup.was_running {
+                let _ = run_capture("sc", &["start", backup.service_name.as_str()]);
+            }
+            return Ok(vec![ServiceActionResult {
+                display_name: backup.display_name,
+                service_name: Some(backup.service_name),
+                status: SERVICE_STATUS_RESTORED.to_string(),
+                error: None,
+            }]);
+        }
+    }
+
     let service_name = match get_service_name_by_display(ITS_POWER_MODE_CONTROL_DISPLAY_NAME) {
         Ok(v) => v,
         Err(e) => {
-            return Ok(ServiceActionResult {
+            return Ok(vec![ServiceActionResult {
                 display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
                 service_name: None,
-                ok: false,
+                status: SERVICE_STATUS_NOT_FOUND.to_string(),
                 error: Some(e),
-            })
+            }])
         }
     };
 
     let _ = run_capture("sc", &["config", service_name.as_str(), "start=", "auto"]);
     let _ = run_capture("sc", &["start", service_name.as_str()]);
-    Ok(ServiceActionResult {
+    Ok(vec![ServiceActionResult {
         display_name: ITS_POWER_MODE_CONTROL_DISPLAY_NAME.to_string(),
         service_name: Some(service_name),
-        ok: true,
+        status: SERVICE_STATUS_RESTORED.to_string(),
         error: None,
-    })
+    }])
+}
+
+fn resolve_service_name(candidate: &ServiceCandidate) -> Result<Option<String>, String> {
+    for name in candidate.service_names {
+        match service_exists(name) {
+            Ok(true) => return Ok(Some(name.to_string())),
+            Ok(false) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    for display in candidate.display_names {
+        match get_service_name_by_display(display) {
+            Ok(name) => return Ok(Some(name)),
+            Err(e) => {
+                if is_service_not_found_error(&e) {
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn service_exists(service_name: &str) -> Result<bool, String> {
+    match run_capture("sc", &["query", service_name]) {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            if is_service_not_found_error(&e) {
+                Ok(false)
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+fn is_service_not_found_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("1060")
+        || lower.contains("does not exist")
+        || lower.contains("specified service does not exist")
+}
+
+fn start_type_to_value(start_type: u32) -> &'static str {
+    match start_type {
+        2 => "auto",
+        3 => "demand",
+        4 => "disabled",
+        _ => "auto",
+    }
 }
 
 fn get_service_name_by_display(display_name: &str) -> Result<String, String> {
