@@ -689,6 +689,49 @@ fn register_task_with_powershell(
     script_path: &Path,
     run_forever: bool,
 ) -> Result<(), String> {
+    match trigger {
+        TaskTrigger::Event { subscription } => {
+            register_event_task_with_schtasks(full_name, subscription, script_path)
+        }
+        TaskTrigger::Logon => register_logon_task_with_powershell(full_name, script_path, run_forever),
+    }
+}
+
+fn register_event_task_with_schtasks(
+    full_name: &str,
+    subscription: &str,
+    script_path: &Path,
+) -> Result<(), String> {
+    let task_cmd = format!(
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{}\"",
+        script_path.to_string_lossy()
+    );
+    let args = vec![
+        "/Create".to_string(),
+        "/F".to_string(),
+        "/TN".to_string(),
+        full_name.to_string(),
+        "/SC".to_string(),
+        "ONEVENT".to_string(),
+        "/EC".to_string(),
+        "System".to_string(),
+        "/MO".to_string(),
+        subscription.to_string(),
+        "/TR".to_string(),
+        task_cmd,
+        "/RL".to_string(),
+        "HIGHEST".to_string(),
+        "/RU".to_string(),
+        "SYSTEM".to_string(),
+    ];
+    run_capture_dynamic("schtasks", &args).map(|_| ())
+}
+
+fn register_logon_task_with_powershell(
+    full_name: &str,
+    script_path: &Path,
+    run_forever: bool,
+) -> Result<(), String> {
     let (task_path, task_name) = split_task_path_name(full_name);
     let task_path_q = ps_quote(&task_path);
     let task_name_q = ps_quote(&task_name);
@@ -704,14 +747,6 @@ fn register_task_with_powershell(
         )
     };
 
-    let trigger_block = match trigger {
-        TaskTrigger::Logon => "$trigger = New-ScheduledTaskTrigger -AtLogOn".to_string(),
-        TaskTrigger::Event { subscription } => format!(
-            "$trigger = New-ScheduledTaskTrigger -OnEvent -Subscription '{}'",
-            ps_quote(subscription)
-        ),
-    };
-
     let settings_block = if run_forever {
         "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Compatibility Win8"
     } else {
@@ -725,8 +760,8 @@ $taskName = '{task_name}'
 $scriptPath = '{script_path}'
 {folder_block}
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+$trigger = New-ScheduledTaskTrigger -AtLogOn
 {settings_block}
-{trigger_block}
 function Register-Task($principal) {{
   Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
 }}
@@ -743,7 +778,6 @@ try {{
         script_path = script_path_q,
         folder_block = folder_block,
         settings_block = settings_block,
-        trigger_block = trigger_block,
     );
 
     run_powershell_dynamic(&script).map(|_| ())
