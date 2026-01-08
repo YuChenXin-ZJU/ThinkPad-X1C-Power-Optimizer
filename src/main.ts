@@ -89,13 +89,13 @@ const STRINGS: Record<
     listDesc: "列出所有计划并标记当前活动方案。",
     backupTitle: "备份电源计划",
     backupDesc: "导出 .pow 文件到桌面，便于恢复。",
-    optTitle: "同步插电=电池（推荐）",
-    optDesc: "将当前计划的 AC 值对齐 DC 值，插电调度更一致。",
-    optItsTitle: "同步 + 禁用 Lenovo ITS（高级）",
-    optItsDesc: "在同步基础上禁用 ITS 服务，降低被写回的概率。",
-    autoTaskInstallTitle: "安装自动回写任务",
-    autoTaskInstallDesc: "在登录/唤醒/电源切换后自动重写 AC=DC。",
-    autoTaskRemoveTitle: "移除自动回写任务",
+    optTitle: "插电调度对齐电池（推荐）",
+    optDesc: "将当前计划的 AC 值对齐 DC 值，插电调度更稳定。",
+    optItsTitle: "对齐 + 禁用 Lenovo ITS（高级）",
+    optItsDesc: "在对齐基础上禁用 ITS 服务，降低被写回的概率。",
+    autoTaskInstallTitle: "启用自动回写（推荐）",
+    autoTaskInstallDesc: "在登录/唤醒/电源切换后自动重新对齐 AC=DC。",
+    autoTaskRemoveTitle: "移除自动回写",
     autoTaskRemoveDesc: "删除本工具创建的计划任务。",
     resetTitle: "恢复默认电源计划",
     resetDesc: "还原 Windows 默认方案并尝试恢复 ITS。",
@@ -124,7 +124,7 @@ const STRINGS: Record<
     its: "ITS 服务",
     ok: "成功",
     fail: "失败",
-    adminNeeded: "部分操作需要管理员权限（备份 / 优化 / 重置）。",
+    adminNeeded: "部分操作需要管理员权限（备份 / 对齐 / 自动回写 / 重置）。",
     relaunchAdmin: "⚠️ 以管理员身份重新启动",
     disclaimerTitle: "免责声明",
     disclaimerBody:
@@ -142,13 +142,13 @@ const STRINGS: Record<
     listDesc: "List all plans and mark the active one.",
     backupTitle: "Backup power plans",
     backupDesc: "Export .pow files to Desktop for restore.",
-    optTitle: "Sync AC to DC (recommended)",
-    optDesc: "Align AC values to DC for smoother plugged-in behavior.",
-    optItsTitle: "Sync + disable Lenovo ITS (advanced)",
-    optItsDesc: "Disable ITS after syncing to reduce overrides.",
-    autoTaskInstallTitle: "Install auto reapply tasks",
+    optTitle: "Align AC to battery (recommended)",
+    optDesc: "Align AC values to DC for steadier plugged-in scheduling.",
+    optItsTitle: "Align + disable Lenovo ITS (advanced)",
+    optItsDesc: "Disable ITS after aligning to reduce overrides.",
+    autoTaskInstallTitle: "Enable auto reapply (recommended)",
     autoTaskInstallDesc: "Reapply AC=DC on logon/resume/power change.",
-    autoTaskRemoveTitle: "Remove auto reapply tasks",
+    autoTaskRemoveTitle: "Remove auto reapply",
     autoTaskRemoveDesc: "Delete tasks created by this tool.",
     resetTitle: "Restore default power plans",
     resetDesc: "Restore Windows defaults and try to re-enable ITS.",
@@ -177,7 +177,7 @@ const STRINGS: Record<
     its: "ITS service",
     ok: "OK",
     fail: "FAIL",
-    adminNeeded: "Some actions require Administrator privileges (backup / optimize / reset).",
+    adminNeeded: "Some actions require Administrator privileges (backup / align / auto reapply / reset).",
     relaunchAdmin: "⚠️ Relaunch as Administrator",
     disclaimerTitle: "Disclaimer",
     disclaimerBody:
@@ -195,13 +195,13 @@ const STRINGS: Record<
     listDesc: "すべてのプランを一覧し、現在のプランを表示します。",
     backupTitle: "電源プランをバックアップ",
     backupDesc: "Desktop に .pow を保存して復元に備えます。",
-    optTitle: "AC=DC に同期（推奨）",
-    optDesc: "AC 値を DC に合わせ、接続時の挙動を統一します。",
-    optItsTitle: "同期 + Lenovo ITS 無効化（上級）",
-    optItsDesc: "同期後に ITS を無効化して上書きを減らします。",
-    autoTaskInstallTitle: "自動再適用タスクを作成",
+    optTitle: "AC をバッテリーに合わせる（推奨）",
+    optDesc: "AC 値を DC に揃えて、接続時の挙動を安定化します。",
+    optItsTitle: "揃え + Lenovo ITS 無効化（上級）",
+    optItsDesc: "揃えた後に ITS を無効化して上書きを減らします。",
+    autoTaskInstallTitle: "自動再適用を有効化（推奨）",
     autoTaskInstallDesc: "ログオン/復帰/電源切替後に AC=DC を再適用。",
-    autoTaskRemoveTitle: "自動再適用タスクを削除",
+    autoTaskRemoveTitle: "自動再適用を削除",
     autoTaskRemoveDesc: "本ツールが作成したタスクを削除します。",
     resetTitle: "既定プランを復元",
     resetDesc: "Windows 既定に戻し ITS を復元します。",
@@ -230,7 +230,7 @@ const STRINGS: Record<
     its: "ITS サービス",
     ok: "成功",
     fail: "失敗",
-    adminNeeded: "一部の操作は管理者権限が必要です（バックアップ / 最適化 / リセット）。",
+    adminNeeded: "一部の操作は管理者権限が必要です（バックアップ / 揃え / 自動再適用 / リセット）。",
     relaunchAdmin: "⚠️ 管理者として再起動",
     disclaimerTitle: "免責事項",
     disclaimerBody:
@@ -328,6 +328,7 @@ window.addEventListener("DOMContentLoaded", () => {
     setText("btn-reset-desc", t("resetDesc"));
 
     syncDisclaimerText();
+    renderAdminBanner();
   };
 
   btnLangZh?.addEventListener("click", () => applyLang("zh"));
@@ -471,6 +472,12 @@ window.addEventListener("DOMContentLoaded", () => {
     modal.classList.remove("hidden");
   };
 
+  const runWithDisclaimer = (action: () => Promise<void>) => {
+    showDisclaimerIfNeeded(() => {
+      void action();
+    });
+  };
+
   const setBusy = (busy: boolean) => {
     const buttons = [
       btnList,
@@ -488,264 +495,278 @@ window.addEventListener("DOMContentLoaded", () => {
 
   btnClear?.addEventListener("click", () => clear());
 
-  btnList?.addEventListener("click", async () => {
-    setBusy(true);
-    try {
-      const plans = await invoke<PowerPlan[]>("list_power_plans");
-      const table = el("table", { class: "table" }, []);
-      const thead = el("thead", {}, [
-        el("tr", {}, [
-          el("th", {}, [t("colActive")]),
-          el("th", {}, [t("colPlan")]),
-          el("th", {}, [t("colSystem")]),
-          el("th", {}, [t("colGuid")]),
-        ]),
-      ]);
-      const tbody = el("tbody", {}, []);
-
-      for (const p of plans) {
-        const explain = planExplain(lang, p.guid);
-        const prettyTitle = explain ? explain.title : p.name;
-        const prettyDesc = explain ? explain.desc : "";
-        const planCell = el("div", {}, [
-          el("div", {}, [prettyTitle]),
-          prettyDesc ? el("div", { class: "muted small" }, [prettyDesc]) : el("span"),
+  btnList?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      setBusy(true);
+      try {
+        const plans = await invoke<PowerPlan[]>("list_power_plans");
+        const table = el("table", { class: "table" }, []);
+        const thead = el("thead", {}, [
+          el("tr", {}, [
+            el("th", {}, [t("colActive")]),
+            el("th", {}, [t("colPlan")]),
+            el("th", {}, [t("colSystem")]),
+            el("th", {}, [t("colGuid")]),
+          ]),
         ]);
+        const tbody = el("tbody", {}, []);
 
-        const badge = el("span", { class: `badge ${p.is_active ? "ok" : ""}` }, [
-          p.is_active ? t("active") : t("inactive"),
-        ]);
+        for (const p of plans) {
+          const explain = planExplain(lang, p.guid);
+          const prettyTitle = explain ? explain.title : p.name;
+          const prettyDesc = explain ? explain.desc : "";
+          const planCell = el("div", {}, [
+            el("div", {}, [prettyTitle]),
+            prettyDesc ? el("div", { class: "muted small" }, [prettyDesc]) : el("span"),
+          ]);
 
-        const row = el("tr", {}, [
-          el("td", {}, [badge]),
-          el("td", {}, [planCell]),
-          el("td", {}, [p.name]),
-          el("td", {}, [el("span", { class: "mono" }, [p.guid])]),
-        ]);
-        tbody.append(row);
+          const badge = el("span", { class: `badge ${p.is_active ? "ok" : ""}` }, [
+            p.is_active ? t("active") : t("inactive"),
+          ]);
+
+          const row = el("tr", {}, [
+            el("td", {}, [badge]),
+            el("td", {}, [planCell]),
+            el("td", {}, [p.name]),
+            el("td", {}, [el("span", { class: "mono" }, [p.guid])]),
+          ]);
+          tbody.append(row);
+        }
+
+        table.append(thead, tbody);
+        appendEntry(t("entryPlans"), table);
+      } catch (e) {
+        appendEntry(t("entryPlans"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
       }
-
-      table.append(thead, tbody);
-      appendEntry(t("entryPlans"), table);
-    } catch (e) {
-      appendEntry(t("entryPlans"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+    });
   });
 
-  btnBackup?.addEventListener("click", async () => {
-    if (!requireAdminOrExplain(t("entryBackup"))) return;
-    setBusy(true);
-    try {
-      const res = await invoke<BackupResult>("backup_power_plans_to_desktop");
-      const wrap = el("div", {}, [
-        el("div", { style: "margin-bottom:10px;" }, [
-          el("span", { class: "badge" }, [`${t("backupDir")}: `]),
-          el("span", { class: "mono" }, [res.backup_dir]),
-        ]),
-      ]);
-
-      const table = el("table", { class: "table" }, []);
-      table.append(
-        el("thead", {}, [
-          el("tr", {}, [
-            el("th", {}, [t("colPlan")]),
-            el("th", {}, [t("colGuid")]),
-            el("th", {}, [t("entryBackup")]),
+  btnBackup?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      if (!requireAdminOrExplain(t("entryBackup"))) return;
+      setBusy(true);
+      try {
+        const res = await invoke<BackupResult>("backup_power_plans_to_desktop");
+        const wrap = el("div", {}, [
+          el("div", { style: "margin-bottom:10px;" }, [
+            el("span", { class: "badge" }, [`${t("backupDir")}: `]),
+            el("span", { class: "mono" }, [res.backup_dir]),
           ]),
-        ]),
-      );
-      const tbody = el("tbody", {}, []);
-      for (const item of res.exported) {
-        const explain = planExplain(lang, item.guid);
-        const planName = explain ? `${explain.title} — ${explain.desc}` : item.name;
-        const status = item.ok ? el("span", { class: "ok" }, [t("ok")]) : el("span", { class: "fail" }, [t("fail")]);
-        const detail = item.ok
-          ? el("div", {}, [status, el("div", { class: "mono", style: "margin-top:6px;" }, [item.file_path])])
-          : el("div", {}, [
-              status,
-              el("div", { class: "muted small" }, [item.error ?? "unknown error"]),
-            ]);
-        tbody.append(
-          el("tr", {}, [
-            el("td", {}, [planName]),
-            el("td", {}, [el("span", { class: "mono" }, [item.guid])]),
-            el("td", {}, [detail]),
+        ]);
+
+        const table = el("table", { class: "table" }, []);
+        table.append(
+          el("thead", {}, [
+            el("tr", {}, [
+              el("th", {}, [t("colPlan")]),
+              el("th", {}, [t("colGuid")]),
+              el("th", {}, [t("entryBackup")]),
+            ]),
           ]),
         );
+        const tbody = el("tbody", {}, []);
+        for (const item of res.exported) {
+          const explain = planExplain(lang, item.guid);
+          const planName = explain ? `${explain.title} — ${explain.desc}` : item.name;
+          const status = item.ok ? el("span", { class: "ok" }, [t("ok")]) : el("span", { class: "fail" }, [t("fail")]);
+          const detail = item.ok
+            ? el("div", {}, [status, el("div", { class: "mono", style: "margin-top:6px;" }, [item.file_path])])
+            : el("div", {}, [
+                status,
+                el("div", { class: "muted small" }, [item.error ?? "unknown error"]),
+              ]);
+          tbody.append(
+            el("tr", {}, [
+              el("td", {}, [planName]),
+              el("td", {}, [el("span", { class: "mono" }, [item.guid])]),
+              el("td", {}, [detail]),
+            ]),
+          );
+        }
+        table.append(tbody);
+        wrap.append(table);
+        appendEntry(t("entryBackup"), wrap);
+      } catch (e) {
+        appendEntry(t("entryBackup"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
       }
-      table.append(tbody);
-      wrap.append(table);
-      appendEntry(t("entryBackup"), wrap);
-    } catch (e) {
-      appendEntry(t("entryBackup"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+    });
   });
 
-  btnOptimize?.addEventListener("click", async () => {
-    if (!requireAdminOrExplain(t("entryOptimize"))) return;
-    setBusy(true);
-    try {
-      const res = await invoke<OptimizeResult>("optimize_active_power_plan", {
-        disableIts: false,
-      });
-      const explain = planExplain(lang, res.scheme_guid);
-      const head = el("div", {}, [
-        el("div", {}, [
-          el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
-          el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
-        ]),
-        explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
-      ]);
+  btnOptimize?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      if (!requireAdminOrExplain(t("entryOptimize"))) return;
+      setBusy(true);
+      try {
+        const res = await invoke<OptimizeResult>("optimize_active_power_plan", {
+          disableIts: false,
+        });
+        const explain = planExplain(lang, res.scheme_guid);
+        const head = el("div", {}, [
+          el("div", {}, [
+            el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
+            el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
+          ]),
+          explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
+        ]);
 
-      const stats = el("div", { class: "row-wrap" }, [
-        el("span", { class: "badge ok" }, [`${t("updated")}: ${res.updated_settings}`]),
-        el("span", { class: `badge ${res.failed_settings === 0 ? "ok" : "fail"}` }, [`${t("failed")}: ${res.failed_settings}`]),
-        el("span", { class: "badge" }, [`${t("skippedSleep")}: ${res.skipped_sleep_settings}`]),
-      ]);
+        const stats = el("div", { class: "row-wrap" }, [
+          el("span", { class: "badge ok" }, [`${t("updated")}: ${res.updated_settings}`]),
+          el("span", { class: `badge ${res.failed_settings === 0 ? "ok" : "fail"}` }, [`${t("failed")}: ${res.failed_settings}`]),
+          el("span", { class: "badge" }, [`${t("skippedSleep")}: ${res.skipped_sleep_settings}`]),
+        ]);
 
-      const msg =
-        res.messages.length > 0
-          ? el("div", { class: "details" }, [
-              el("div", { class: "details-title" }, ["Details"]),
-              el("div", { class: "mono" }, [res.messages.join("\n")]),
-            ])
-          : el("span");
+        const msg =
+          res.messages.length > 0
+            ? el("div", { class: "details" }, [
+                el("div", { class: "details-title" }, ["Details"]),
+                el("div", { class: "mono" }, [res.messages.join("\n")]),
+              ])
+            : el("span");
 
-      appendEntry(t("entryOptimize"), el("div", {}, [head, stats, msg]));
-    } catch (e) {
-      appendEntry(t("entryOptimize"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+        appendEntry(t("entryOptimize"), el("div", {}, [head, stats, msg]));
+      } catch (e) {
+        appendEntry(t("entryOptimize"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
+      }
+    });
   });
 
-  btnOptimizeIts?.addEventListener("click", async () => {
-    if (!requireAdminOrExplain(t("entryOptimize"))) return;
-    setBusy(true);
-    try {
-      const res = await invoke<OptimizeResult>("optimize_active_power_plan", {
-        disableIts: true,
-      });
-      const explain = planExplain(lang, res.scheme_guid);
-      const head = el("div", {}, [
-        el("div", {}, [
-          el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
-          el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
-        ]),
-        explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
-      ]);
+  btnOptimizeIts?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      if (!requireAdminOrExplain(t("entryOptimize"))) return;
+      setBusy(true);
+      try {
+        const res = await invoke<OptimizeResult>("optimize_active_power_plan", {
+          disableIts: true,
+        });
+        const explain = planExplain(lang, res.scheme_guid);
+        const head = el("div", {}, [
+          el("div", {}, [
+            el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
+            el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
+          ]),
+          explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
+        ]);
 
-      const stats = el("div", { class: "row-wrap" }, [
-        el("span", { class: "badge ok" }, [`${t("updated")}: ${res.updated_settings}`]),
-        el("span", { class: `badge ${res.failed_settings === 0 ? "ok" : "fail"}` }, [`${t("failed")}: ${res.failed_settings}`]),
-        el("span", { class: "badge" }, [`${t("skippedSleep")}: ${res.skipped_sleep_settings}`]),
-      ]);
+        const stats = el("div", { class: "row-wrap" }, [
+          el("span", { class: "badge ok" }, [`${t("updated")}: ${res.updated_settings}`]),
+          el("span", { class: `badge ${res.failed_settings === 0 ? "ok" : "fail"}` }, [`${t("failed")}: ${res.failed_settings}`]),
+          el("span", { class: "badge" }, [`${t("skippedSleep")}: ${res.skipped_sleep_settings}`]),
+        ]);
 
-      const its =
-        res.its
-          ? el("div", { class: "stack" }, [
-              el("span", { class: `badge ${res.its.ok ? "ok" : "fail"}` }, [
-                `${t("its")}: ${res.its.ok ? t("ok") : t("fail")}`,
-              ]),
-              el("div", { class: "mono", style: "margin-top:6px;" }, [res.its.service_name ?? ""]),
-              res.its.error
-                ? el("div", { class: "muted small" }, [
-                    res.its.error,
-                  ])
-                : el("span"),
-            ])
-          : el("span");
+        const its =
+          res.its
+            ? el("div", { class: "stack" }, [
+                el("span", { class: `badge ${res.its.ok ? "ok" : "fail"}` }, [
+                  `${t("its")}: ${res.its.ok ? t("ok") : t("fail")}`,
+                ]),
+                el("div", { class: "mono", style: "margin-top:6px;" }, [res.its.service_name ?? ""]),
+                res.its.error
+                  ? el("div", { class: "muted small" }, [
+                      res.its.error,
+                    ])
+                  : el("span"),
+              ])
+            : el("span");
 
-      const msg =
-        res.messages.length > 0
-          ? el("div", { class: "details" }, [
-              el("div", { class: "details-title" }, ["Details"]),
-              el("div", { class: "mono" }, [res.messages.join("\n")]),
-            ])
-          : el("span");
+        const msg =
+          res.messages.length > 0
+            ? el("div", { class: "details" }, [
+                el("div", { class: "details-title" }, ["Details"]),
+                el("div", { class: "mono" }, [res.messages.join("\n")]),
+              ])
+            : el("span");
 
-      appendEntry(t("entryOptimize"), el("div", {}, [head, stats, its, msg]));
-    } catch (e) {
-      appendEntry(t("entryOptimize"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+        appendEntry(t("entryOptimize"), el("div", {}, [head, stats, its, msg]));
+      } catch (e) {
+        appendEntry(t("entryOptimize"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
+      }
+    });
   });
 
-  btnAutoTaskInstall?.addEventListener("click", async () => {
-    if (!requireAdminOrExplain(t("entryAutoTaskInstall"))) return;
-    setBusy(true);
-    try {
-      const res = await invoke<TaskInstallResult>("install_auto_apply_tasks");
-      const wrap = el("div", {}, [
-        el("div", { style: "margin-bottom:10px;" }, [
-          el("span", { class: "badge" }, [`${t("scriptPath")}: `]),
-          el("span", { class: "mono" }, [res.script_path]),
-        ]),
-        renderTaskTable(res.tasks),
-      ]);
-      appendEntry(t("entryAutoTaskInstall"), wrap);
-    } catch (e) {
-      appendEntry(t("entryAutoTaskInstall"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+  btnAutoTaskInstall?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      if (!requireAdminOrExplain(t("entryAutoTaskInstall"))) return;
+      setBusy(true);
+      try {
+        const res = await invoke<TaskInstallResult>("install_auto_apply_tasks");
+        const wrap = el("div", {}, [
+          el("div", { style: "margin-bottom:10px;" }, [
+            el("span", { class: "badge" }, [`${t("scriptPath")}: `]),
+            el("span", { class: "mono" }, [res.script_path]),
+          ]),
+          renderTaskTable(res.tasks),
+        ]);
+        appendEntry(t("entryAutoTaskInstall"), wrap);
+      } catch (e) {
+        appendEntry(t("entryAutoTaskInstall"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
+      }
+    });
   });
 
-  btnAutoTaskRemove?.addEventListener("click", async () => {
-    if (!requireAdminOrExplain(t("entryAutoTaskRemove"))) return;
-    setBusy(true);
-    try {
-      const res = await invoke<TaskRemoveResult>("remove_auto_apply_tasks");
-      appendEntry(t("entryAutoTaskRemove"), renderTaskTable(res.tasks));
-    } catch (e) {
-      appendEntry(t("entryAutoTaskRemove"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+  btnAutoTaskRemove?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      if (!requireAdminOrExplain(t("entryAutoTaskRemove"))) return;
+      setBusy(true);
+      try {
+        const res = await invoke<TaskRemoveResult>("remove_auto_apply_tasks");
+        appendEntry(t("entryAutoTaskRemove"), renderTaskTable(res.tasks));
+      } catch (e) {
+        appendEntry(t("entryAutoTaskRemove"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
+      }
+    });
   });
 
-  btnReset?.addEventListener("click", async () => {
-    if (!requireAdminOrExplain(t("entryReset"))) return;
-    setBusy(true);
-    try {
-      const res = await invoke<ResetResult>("reset_power_plans_and_restore_its");
-      const explain = planExplain(lang, res.scheme_guid);
-      const messages = el("div", { class: "mono" }, [res.messages.join("\n")]);
+  btnReset?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      if (!requireAdminOrExplain(t("entryReset"))) return;
+      setBusy(true);
+      try {
+        const res = await invoke<ResetResult>("reset_power_plans_and_restore_its");
+        const explain = planExplain(lang, res.scheme_guid);
+        const messages = el("div", { class: "mono" }, [res.messages.join("\n")]);
 
-      const its =
-        res.its
-          ? el("div", { class: "stack" }, [
-              el("span", { class: `badge ${res.its.ok ? "ok" : "fail"}` }, [
-                `${t("its")}: ${res.its.ok ? t("ok") : t("fail")}`,
-              ]),
-              el("div", { class: "mono", style: "margin-top:6px;" }, [res.its.service_name ?? ""]),
-              res.its.error
-                ? el("div", { class: "muted small" }, [
-                    res.its.error,
-                  ])
-                : el("span"),
-            ])
-          : el("span");
+        const its =
+          res.its
+            ? el("div", { class: "stack" }, [
+                el("span", { class: `badge ${res.its.ok ? "ok" : "fail"}` }, [
+                  `${t("its")}: ${res.its.ok ? t("ok") : t("fail")}`,
+                ]),
+                el("div", { class: "mono", style: "margin-top:6px;" }, [res.its.service_name ?? ""]),
+                res.its.error
+                  ? el("div", { class: "muted small" }, [
+                      res.its.error,
+                    ])
+                  : el("span"),
+              ])
+            : el("span");
 
-      const scheme = el("div", {}, [
-        el("div", {}, [
-          el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
-          el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
-        ]),
-        explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
-      ]);
+        const scheme = el("div", {}, [
+          el("div", {}, [
+            el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
+            el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
+          ]),
+          explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
+        ]);
 
-      appendEntry(t("entryReset"), el("div", {}, [scheme, el("div", { class: "stack" }, [messages]), its]));
-    } catch (e) {
-      appendEntry(t("entryReset"), el("div", { class: "fail" }, [String(e)]));
-    } finally {
-      setBusy(false);
-    }
+        appendEntry(t("entryReset"), el("div", {}, [scheme, el("div", { class: "stack" }, [messages]), its]));
+      } catch (e) {
+        appendEntry(t("entryReset"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
+      }
+    });
   });
 
   applyLang(lang);

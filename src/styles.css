@@ -175,8 +175,12 @@ h1 {
   line-height: 1.5;
 }
 
+.action.recommended .action-title {
+  color: #1b5e20;
+}
+
 .action.danger .action-title {
-  color: #7a1f1f;
+  color: #b03030;
 }
 
 @media (max-width: 720px) {
@@ -536,3 +540,10 @@ h1 {
     color: rgba(255, 255, 255, 0.78);
   }
 }
+  .action.recommended .action-title {
+    color: #86e09a;
+  }
+
+  .action.danger .action-title {
+    color: #ff6b6b;
+  }
