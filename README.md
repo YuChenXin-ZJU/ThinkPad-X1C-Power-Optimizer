@@ -1,4 +1,4 @@
-# ThinkPad X1C Power Optimizer
+﻿# ThinkPad X1C Power Optimizer
 
 <p align="center">
   <a href="#中文">中文</a> ·
