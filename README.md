@@ -1,17 +1,12 @@
 ﻿# ThinkPad X1C Power Optimizer
 
-<p align="center">
-  <a href="#中文"><img alt="中文" src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-Docs-1677ff?style=for-the-badge"></a>
-  <a href="#english"><img alt="English" src="https://img.shields.io/badge/English-Docs-2ea44f?style=for-the-badge"></a>
-  <a href="https://github.com/YuChenXin-ZJU/ThinkPad-X1C-Power-Optimizer/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-Download-f97316?style=for-the-badge"></a>
-</p>
-
+[![CN](https://img.shields.io/badge/%E4%B8%AD%E6%96%87-README-1677ff?style=flat-square)](#%E4%B8%AD%E6%96%87) [![EN](https://img.shields.io/badge/English-README-2ea44f?style=flat-square)](#english) [![Release](https://img.shields.io/badge/Release-Download-f97316?style=flat-square)](https://github.com/YuChenXin-ZJU/ThinkPad-X1C-Power-Optimizer/releases/latest)
 ---
 
 # 中文
 
 ## 概述
-面向 ThinkPad X1 Carbon 的 Windows 桌面工具（Tauri），用于查看、备份和校正电源计划。重点是降低插电或模式切换后的调度波动，同时提供可回退操作路径。
+面向 ThinkPad X1 Carbon 的 Windows 桌面工具（Tauri），用于查看、备份与校正电源计划，降低插电/模式切换带来的调度变化，并提供可回退操作路径。
 
 本工具使用 Windows 自带命令（`powercfg`、`sc`、`schtasks` 等）执行，不需要联网。
 
@@ -20,8 +15,8 @@
 - 备份电源计划（需管理员权限）：导出 `.pow`，便于回滚与迁移。
 - 插电调度对齐电池（推荐，需管理员权限）：将当前方案的 AC 值对齐 DC 值（跳过睡眠子组）。
 - 插电参数对齐电池 + 停用电源策略服务（高级，需管理员权限）：
-  - 对齐当前方案的 AC=DC，并尝试停止/禁用 Intel DTT、Lenovo ITS、Vantage 等服务。
-  - 不存在的服务会显示“未安装”，不再报错。
+  - 在对齐基础上，尝试停止/禁用可能回写电源策略的服务（如 Intel DPTF/DTT、Lenovo ITS、Vantage、LISF、ImController 等）。
+  - 未安装的服务会显示“未安装”，不再报错。
 - 启用自动回写（推荐，需管理员权限）：登录/唤醒/电源切换后自动对齐，并启动后台守护。
 - AC/DC 核心一致性检查：对比处理器子组（SUB_PROCESSOR）AC/DC 值是否一致并输出差异。
 - 恢复默认电源计划（需管理员权限）：还原 Windows 默认方案并尝试恢复电源策略服务。
@@ -48,7 +43,7 @@
 # English
 
 ## Overview
-A Windows desktop utility (Tauri) for ThinkPad X1 Carbon that provides power plan visibility, backup/rollback, alignment, and a guardian mechanism to keep settings consistent.
+A Windows desktop utility (Tauri) for ThinkPad X1 Carbon focused on power plan visibility, backup/rollback, and reducing scheduling changes when switching to AC.
 
 It uses built-in Windows commands (`powercfg`, `sc`, `schtasks`, etc.) and does not require network access.
 
@@ -57,8 +52,8 @@ It uses built-in Windows commands (`powercfg`, `sc`, `schtasks`, etc.) and does 
 - Backup power plans (Admin required): export `.pow` files.
 - Smoother on AC (recommended, Admin required): align AC values to DC (skips Sleep subgroup).
 - Align AC to battery + disable power policy services (advanced, Admin required):
-  - Stops/disables likely writers (e.g., Intel DTT / Lenovo ITS / Vantage).
-  - Services not installed are reported as ?Not installed? instead of errors.
+  - Stops/disables likely writers (e.g., Intel DPTF/DTT, Lenovo ITS, Vantage, LISF, ImController).
+  - Services not installed are reported as “Not installed.”
 - Auto reapply (recommended, Admin required): reapply on logon/resume/power change and keep a watchdog running.
 - AC/DC processor alignment check: compare SUB_PROCESSOR AC/DC values and list differences.
 - Reset + restore services (Admin required): restore default schemes and attempt to restore services.
