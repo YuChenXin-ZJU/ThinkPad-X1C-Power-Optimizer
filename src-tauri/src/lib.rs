@@ -18,6 +18,10 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const DEFAULT_BALANCED_GUID: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
 const SUB_SLEEP_GUID: &str = "238c9fa8-0aad-41ed-83f4-97be242c8f20";
 const ITS_POWER_MODE_CONTROL_DISPLAY_NAME: &str = "Lenovo ITS Power Mode Control";
+const AUTO_APPLY_TASK_LOGON: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnLogon";
+const AUTO_APPLY_TASK_RESUME: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnResume";
+const AUTO_APPLY_TASK_POWERSRC: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnPowerSource";
+const AUTO_APPLY_SCRIPT_NAME: &str = "apply-ac-equals-dc.ps1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PowerPlan {
@@ -72,6 +76,24 @@ struct ServiceBackup {
     service_name: String,
     start_type: u32,
     was_running: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskItemResult {
+    name: String,
+    ok: bool,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskInstallResult {
+    script_path: String,
+    tasks: Vec<TaskItemResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskRemoveResult {
+    tasks: Vec<TaskItemResult>,
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +228,108 @@ fn reset_power_plans_and_restore_its() -> Result<ResetResult, String> {
 }
 
 #[tauri::command]
+fn install_auto_apply_tasks() -> Result<TaskInstallResult, String> {
+    let script_path = ensure_auto_apply_script()?;
+    let task_cmd = format!(
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{}\"",
+        script_path.to_string_lossy()
+    );
+
+    let mut tasks = Vec::new();
+    let task_specs = vec![
+        (
+            AUTO_APPLY_TASK_LOGON,
+            vec!["/SC", "ONLOGON"],
+        ),
+        (
+            AUTO_APPLY_TASK_RESUME,
+            vec![
+                "/SC",
+                "ONEVENT",
+                "/EC",
+                "System",
+                "/MO",
+                "*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and (EventID=1)]]",
+            ],
+        ),
+        (
+            AUTO_APPLY_TASK_POWERSRC,
+            vec![
+                "/SC",
+                "ONEVENT",
+                "/EC",
+                "System",
+                "/MO",
+                "*[System[Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=105)]]",
+            ],
+        ),
+    ];
+
+    for (name, schedule_args) in task_specs {
+        let mut args: Vec<String> = vec![
+            "/Create".to_string(),
+            "/F".to_string(),
+            "/TN".to_string(),
+            name.to_string(),
+            "/RL".to_string(),
+            "HIGHEST".to_string(),
+            "/RU".to_string(),
+            "SYSTEM".to_string(),
+            "/TR".to_string(),
+            task_cmd.clone(),
+        ];
+        for a in schedule_args {
+            args.push(a.to_string());
+        }
+
+        match run_capture_dynamic("schtasks", &args) {
+            Ok(_) => tasks.push(TaskItemResult {
+                name: name.to_string(),
+                ok: true,
+                error: None,
+            }),
+            Err(e) => tasks.push(TaskItemResult {
+                name: name.to_string(),
+                ok: false,
+                error: Some(e),
+            }),
+        }
+    }
+
+    Ok(TaskInstallResult {
+        script_path: script_path.to_string_lossy().to_string(),
+        tasks,
+    })
+}
+
+#[tauri::command]
+fn remove_auto_apply_tasks() -> Result<TaskRemoveResult, String> {
+    let mut tasks = Vec::new();
+    let names = vec![
+        AUTO_APPLY_TASK_LOGON,
+        AUTO_APPLY_TASK_RESUME,
+        AUTO_APPLY_TASK_POWERSRC,
+    ];
+
+    for name in names {
+        match run_capture("schtasks", &["/Delete", "/F", "/TN", name]) {
+            Ok(_) => tasks.push(TaskItemResult {
+                name: name.to_string(),
+                ok: true,
+                error: None,
+            }),
+            Err(e) => tasks.push(TaskItemResult {
+                name: name.to_string(),
+                ok: false,
+                error: Some(e),
+            }),
+        }
+    }
+
+    Ok(TaskRemoveResult { tasks })
+}
+
+#[tauri::command]
 fn get_privilege_status() -> Result<bool, String> {
     let mut cmd = Command::new("net");
     cmd.args(["session"]);
@@ -263,6 +387,36 @@ fn run_capture(program: &str, args: &[&str]) -> Result<String, String> {
     } else {
         Err(format!(
             "命令退出码 {:?}: {} {} | 输出: {}",
+            output.status.code(),
+            program,
+            args.join(" "),
+            text.trim()
+        ))
+    }
+}
+
+fn run_capture_dynamic(program: &str, args: &[String]) -> Result<String, String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("鍚姩鍛戒护澶辫触: {program} {args:?}: {e}"))?;
+
+    let mut all = Vec::new();
+    all.extend_from_slice(&output.stdout);
+    all.extend_from_slice(&output.stderr);
+    let text = decode_output(&all);
+
+    if output.status.success() {
+        Ok(text)
+    } else {
+        Err(format!(
+            "鍛戒护閫€鍑虹爜 {:?}: {} {} | 杈撳嚭: {}",
             output.status.code(),
             program,
             args.join(" "),
@@ -397,6 +551,55 @@ fn ensure_app_desktop_dir() -> Result<PathBuf, String> {
     let app_dir = desktop.join("ThinkPadX1PowerOptimize");
     fs::create_dir_all(&app_dir).map_err(|e| format!("创建桌面应用目录失败: {e}"))?;
     Ok(app_dir)
+}
+
+fn ensure_auto_apply_script() -> Result<PathBuf, String> {
+    let base_dir = ensure_app_desktop_dir()?;
+    let script_path = base_dir.join(AUTO_APPLY_SCRIPT_NAME);
+    let script = format!(
+        r#"$ErrorActionPreference = "SilentlyContinue"
+
+$subSleep = "{sub_sleep}"
+$schemeText = powercfg /getactivescheme
+if ($schemeText -match "(?i)([0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}})") {{
+  $scheme = $Matches[1]
+}} else {{
+  exit 1
+}}
+
+$query = powercfg /query $scheme
+$subgroup = $null
+$setting = $null
+$updates = New-Object System.Collections.Generic.List[Object]
+
+foreach ($line in ($query -split "`r?`n")) {{
+  if ($line -match "(?i)(Subgroup GUID|子组 GUID):\\s*([0-9a-f-]{{36}})") {{
+    $subgroup = $Matches[2]
+    $setting = $null
+    continue
+  }}
+  if ($line -match "(?i)(Power Setting GUID|电源设置 GUID):\\s*([0-9a-f-]{{36}})") {{
+    $setting = $Matches[2]
+    continue
+  }}
+  if ($line -match "(?i)(Current DC Power Setting Index|当前直流电源设置索引):\\s*0x([0-9a-f]+)") {{
+    if (-not $subgroup -or -not $setting) {{ continue }}
+    if ($subgroup -ieq $subSleep) {{ continue }}
+    $dc = [Convert]::ToInt32($Matches[2], 16)
+    $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$dc }}) | Out-Null
+  }}
+}}
+
+foreach ($u in $updates) {{
+  powercfg /setacvalueindex $scheme $u.Subgroup $u.Setting $u.Value | Out-Null
+}}
+powercfg /setactive $scheme | Out-Null
+"#,
+        sub_sleep = SUB_SLEEP_GUID
+    );
+
+    fs::write(&script_path, script).map_err(|e| format!("鍐欏叆鑴氭湰澶辫触: {e}"))?;
+    Ok(script_path)
 }
 
 fn unix_timestamp() -> u64 {
@@ -561,6 +764,8 @@ pub fn run() {
             backup_power_plans_to_desktop,
             optimize_active_power_plan,
             reset_power_plans_and_restore_its,
+            install_auto_apply_tasks,
+            remove_auto_apply_tasks,
             get_privilege_status,
             relaunch_as_admin
         ])

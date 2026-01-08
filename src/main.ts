@@ -28,6 +28,18 @@ type ResetResult = {
   its?: ServiceActionResult | null;
   messages: string[];
 };
+type TaskItemResult = {
+  name: string;
+  ok: boolean;
+  error?: string | null;
+};
+type TaskInstallResult = {
+  script_path: string;
+  tasks: TaskItemResult[];
+};
+type TaskRemoveResult = {
+  tasks: TaskItemResult[];
+};
 
 type Lang = "zh" | "en" | "ja";
 
@@ -73,16 +85,20 @@ const STRINGS: Record<
     actions: "操作",
     output: "输出",
     clear: "清空",
-    listTitle: "查看本机电源计划",
-    listDesc: "列出所有电源计划并标记当前活动计划。",
-    backupTitle: "备份电源计划到桌面",
-    backupDesc: "导出所有电源计划为 .pow 文件。",
-    optTitle: "插电更流畅（推荐）",
-    optDesc: "把“插电时”的电源参数调整为与“电池模式”一致。",
-    optItsTitle: "插电更流畅 + 禁用 Lenovo ITS（高级）",
-    optItsDesc: "在上一步基础上，禁用 Lenovo ITS Power Mode Control 服务（可恢复）。",
-    resetTitle: "重置并恢复 Lenovo ITS",
-    resetDesc: "恢复系统默认电源计划并尝试恢复 Lenovo ITS。",
+    listTitle: "查看电源计划",
+    listDesc: "列出所有计划并标记当前活动方案。",
+    backupTitle: "备份电源计划",
+    backupDesc: "导出 .pow 文件到桌面，便于恢复。",
+    optTitle: "同步插电=电池（推荐）",
+    optDesc: "将当前计划的 AC 值对齐 DC 值，插电调度更一致。",
+    optItsTitle: "同步 + 禁用 Lenovo ITS（高级）",
+    optItsDesc: "在同步基础上禁用 ITS 服务，降低被写回的概率。",
+    autoTaskInstallTitle: "安装自动回写任务",
+    autoTaskInstallDesc: "在登录/唤醒/电源切换后自动重写 AC=DC。",
+    autoTaskRemoveTitle: "移除自动回写任务",
+    autoTaskRemoveDesc: "删除本工具创建的计划任务。",
+    resetTitle: "恢复默认电源计划",
+    resetDesc: "还原 Windows 默认方案并尝试恢复 ITS。",
     entryPlans: "电源计划列表",
     colActive: "状态",
     colPlan: "计划（解释）",
@@ -96,6 +112,12 @@ const STRINGS: Record<
     entryBackup: "备份结果",
     entryOptimize: "优化结果",
     entryReset: "重置结果",
+    entryAutoTaskInstall: "安装自动回写任务",
+    entryAutoTaskRemove: "移除自动回写任务",
+    scriptPath: "脚本路径",
+    taskList: "任务列表",
+    taskName: "任务",
+    taskResult: "结果",
     updated: "已更新",
     failed: "失败",
     skippedSleep: "跳过睡眠设置",
@@ -116,16 +138,20 @@ const STRINGS: Record<
     actions: "Actions",
     output: "Output",
     clear: "Clear",
-    listTitle: "List power plans",
-    listDesc: "Show all power plans and mark the active one.",
-    backupTitle: "Backup power plans to Desktop",
-    backupDesc: "Export all plans as .pow files.",
-    optTitle: "Smoother on AC (recommended)",
-    optDesc: "Make “plugged-in” settings match “battery” settings for the active plan.",
-    optItsTitle: "Smoother on AC + disable Lenovo ITS (advanced)",
-    optItsDesc: "Also disable the Lenovo ITS Power Mode Control service (restorable).",
-    resetTitle: "Reset + restore Lenovo ITS",
-    resetDesc: "Restore default schemes and try to restore Lenovo ITS.",
+    listTitle: "View power plans",
+    listDesc: "List all plans and mark the active one.",
+    backupTitle: "Backup power plans",
+    backupDesc: "Export .pow files to Desktop for restore.",
+    optTitle: "Sync AC to DC (recommended)",
+    optDesc: "Align AC values to DC for smoother plugged-in behavior.",
+    optItsTitle: "Sync + disable Lenovo ITS (advanced)",
+    optItsDesc: "Disable ITS after syncing to reduce overrides.",
+    autoTaskInstallTitle: "Install auto reapply tasks",
+    autoTaskInstallDesc: "Reapply AC=DC on logon/resume/power change.",
+    autoTaskRemoveTitle: "Remove auto reapply tasks",
+    autoTaskRemoveDesc: "Delete tasks created by this tool.",
+    resetTitle: "Restore default power plans",
+    resetDesc: "Restore Windows defaults and try to re-enable ITS.",
     entryPlans: "Power plan list",
     colActive: "Status",
     colPlan: "Plan (explained)",
@@ -139,6 +165,12 @@ const STRINGS: Record<
     entryBackup: "Backup result",
     entryOptimize: "Optimize result",
     entryReset: "Reset result",
+    entryAutoTaskInstall: "Install auto reapply tasks",
+    entryAutoTaskRemove: "Remove auto reapply tasks",
+    scriptPath: "Script path",
+    taskList: "Task list",
+    taskName: "Task",
+    taskResult: "Result",
     updated: "Updated",
     failed: "Failed",
     skippedSleep: "Skipped sleep settings",
@@ -159,16 +191,20 @@ const STRINGS: Record<
     actions: "操作",
     output: "出力",
     clear: "クリア",
-    listTitle: "電源プラン一覧",
-    listDesc: "電源プランを一覧表示し、現在のプランを示します。",
-    backupTitle: "デスクトップへバックアップ",
-    backupDesc: "全プランを .pow としてエクスポートします。",
-    optTitle: "AC でより快適（推奨）",
-    optDesc: "「AC（接続時）」の設定を「バッテリー時」と同じ値に揃えます。",
-    optItsTitle: "AC でより快適 + Lenovo ITS 無効化（上級）",
-    optItsDesc: "加えて Lenovo ITS Power Mode Control サービスを無効化します（復元可）。",
-    resetTitle: "リセット + Lenovo ITS 復元",
-    resetDesc: "既定スキームへ戻し、Lenovo ITS の復元を試みます。",
+    listTitle: "電源プランを表示",
+    listDesc: "すべてのプランを一覧し、現在のプランを表示します。",
+    backupTitle: "電源プランをバックアップ",
+    backupDesc: "Desktop に .pow を保存して復元に備えます。",
+    optTitle: "AC=DC に同期（推奨）",
+    optDesc: "AC 値を DC に合わせ、接続時の挙動を統一します。",
+    optItsTitle: "同期 + Lenovo ITS 無効化（上級）",
+    optItsDesc: "同期後に ITS を無効化して上書きを減らします。",
+    autoTaskInstallTitle: "自動再適用タスクを作成",
+    autoTaskInstallDesc: "ログオン/復帰/電源切替後に AC=DC を再適用。",
+    autoTaskRemoveTitle: "自動再適用タスクを削除",
+    autoTaskRemoveDesc: "本ツールが作成したタスクを削除します。",
+    resetTitle: "既定プランを復元",
+    resetDesc: "Windows 既定に戻し ITS を復元します。",
     entryPlans: "電源プラン一覧",
     colActive: "状態",
     colPlan: "プラン（説明）",
@@ -182,6 +218,12 @@ const STRINGS: Record<
     entryBackup: "バックアップ結果",
     entryOptimize: "最適化結果",
     entryReset: "リセット結果",
+    entryAutoTaskInstall: "自動再適用タスクを作成",
+    entryAutoTaskRemove: "自動再適用タスクを削除",
+    scriptPath: "スクリプトパス",
+    taskList: "タスク一覧",
+    taskName: "タスク",
+    taskResult: "結果",
     updated: "更新",
     failed: "失敗",
     skippedSleep: "スリープ設定をスキップ",
@@ -233,6 +275,10 @@ window.addEventListener("DOMContentLoaded", () => {
   const btnOptimize = document.querySelector<HTMLButtonElement>("#btn-optimize");
   const btnOptimizeIts =
     document.querySelector<HTMLButtonElement>("#btn-optimize-its");
+  const btnAutoTaskInstall =
+    document.querySelector<HTMLButtonElement>("#btn-autotask-install");
+  const btnAutoTaskRemove =
+    document.querySelector<HTMLButtonElement>("#btn-autotask-remove");
   const btnReset = document.querySelector<HTMLButtonElement>("#btn-reset");
 
   const btnLangZh = document.querySelector<HTMLButtonElement>("#lang-zh");
@@ -274,6 +320,10 @@ window.addEventListener("DOMContentLoaded", () => {
     setText("btn-optimize-desc", t("optDesc"));
     setText("btn-optimize-its-title", t("optItsTitle"));
     setText("btn-optimize-its-desc", t("optItsDesc"));
+    setText("btn-autotask-install-title", t("autoTaskInstallTitle"));
+    setText("btn-autotask-install-desc", t("autoTaskInstallDesc"));
+    setText("btn-autotask-remove-title", t("autoTaskRemoveTitle"));
+    setText("btn-autotask-remove-desc", t("autoTaskRemoveDesc"));
     setText("btn-reset-title", t("resetTitle"));
     setText("btn-reset-desc", t("resetDesc"));
 
@@ -299,6 +349,35 @@ window.addEventListener("DOMContentLoaded", () => {
       body,
     ]);
     outputEl.prepend(entry);
+  };
+
+  const renderTaskTable = (tasks: TaskItemResult[]) => {
+    const table = el("table", { class: "table" }, []);
+    table.append(
+      el("thead", {}, [
+        el("tr", {}, [el("th", {}, [t("taskName")]), el("th", {}, [t("taskResult")])]),
+      ]),
+    );
+    const tbody = el("tbody", {}, []);
+    for (const item of tasks) {
+      const status = item.ok
+        ? el("span", { class: "ok" }, [t("ok")])
+        : el("span", { class: "fail" }, [t("fail")]);
+      const detail = item.ok
+        ? el("div", {}, [status])
+        : el("div", {}, [
+            status,
+            el("div", { class: "muted small" }, [item.error ?? "unknown error"]),
+          ]);
+      tbody.append(
+        el("tr", {}, [
+          el("td", {}, [el("span", { class: "mono" }, [item.name])]),
+          el("td", {}, [detail]),
+        ]),
+      );
+    }
+    table.append(tbody);
+    return table;
   };
 
   let isAdmin = false;
@@ -393,7 +472,15 @@ window.addEventListener("DOMContentLoaded", () => {
   };
 
   const setBusy = (busy: boolean) => {
-    const buttons = [btnList, btnBackup, btnOptimize, btnOptimizeIts, btnReset];
+    const buttons = [
+      btnList,
+      btnBackup,
+      btnOptimize,
+      btnOptimizeIts,
+      btnAutoTaskInstall,
+      btnAutoTaskRemove,
+      btnReset,
+    ];
     for (const b of buttons) {
       if (b) b.disabled = busy;
     }
@@ -584,6 +671,39 @@ window.addEventListener("DOMContentLoaded", () => {
       appendEntry(t("entryOptimize"), el("div", {}, [head, stats, its, msg]));
     } catch (e) {
       appendEntry(t("entryOptimize"), el("div", { class: "fail" }, [String(e)]));
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  btnAutoTaskInstall?.addEventListener("click", async () => {
+    if (!requireAdminOrExplain(t("entryAutoTaskInstall"))) return;
+    setBusy(true);
+    try {
+      const res = await invoke<TaskInstallResult>("install_auto_apply_tasks");
+      const wrap = el("div", {}, [
+        el("div", { style: "margin-bottom:10px;" }, [
+          el("span", { class: "badge" }, [`${t("scriptPath")}: `]),
+          el("span", { class: "mono" }, [res.script_path]),
+        ]),
+        renderTaskTable(res.tasks),
+      ]);
+      appendEntry(t("entryAutoTaskInstall"), wrap);
+    } catch (e) {
+      appendEntry(t("entryAutoTaskInstall"), el("div", { class: "fail" }, [String(e)]));
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  btnAutoTaskRemove?.addEventListener("click", async () => {
+    if (!requireAdminOrExplain(t("entryAutoTaskRemove"))) return;
+    setBusy(true);
+    try {
+      const res = await invoke<TaskRemoveResult>("remove_auto_apply_tasks");
+      appendEntry(t("entryAutoTaskRemove"), renderTaskTable(res.tasks));
+    } catch (e) {
+      appendEntry(t("entryAutoTaskRemove"), el("div", { class: "fail" }, [String(e)]));
     } finally {
       setBusy(false);
     }

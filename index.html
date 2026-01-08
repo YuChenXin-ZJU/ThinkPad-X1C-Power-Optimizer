@@ -28,24 +28,32 @@
           <h2 id="sec-actions-title" class="section-title">操作</h2>
           <div class="actions">
             <button id="btn-list" type="button" class="action">
-              <div class="action-title" id="btn-list-title">查看本机电源计划</div>
-              <div class="action-desc" id="btn-list-desc">列出所有电源计划并标记当前活动计划。</div>
+              <div class="action-title" id="btn-list-title">查看电源计划</div>
+              <div class="action-desc" id="btn-list-desc">列出所有计划并标记当前活动方案。</div>
             </button>
             <button id="btn-backup" type="button" class="action">
-              <div class="action-title" id="btn-backup-title">备份电源计划到桌面</div>
-              <div class="action-desc" id="btn-backup-desc">导出所有电源计划为 .pow 文件。</div>
+              <div class="action-title" id="btn-backup-title">备份电源计划</div>
+              <div class="action-desc" id="btn-backup-desc">导出 .pow 文件到桌面，便于恢复。</div>
             </button>
-            <button id="btn-optimize" type="button" class="action">
-              <div class="action-title" id="btn-optimize-title">优化（AC 对齐 DC）</div>
-              <div class="action-desc" id="btn-optimize-desc">将当前计划的交流电参数统一为直流电参数。</div>
+            <button id="btn-optimize" type="button" class="action primary">
+              <div class="action-title" id="btn-optimize-title">同步插电=电池（推荐）</div>
+              <div class="action-desc" id="btn-optimize-desc">将当前计划的 AC 值对齐 DC 值。</div>
             </button>
             <button id="btn-optimize-its" type="button" class="action">
-              <div class="action-title" id="btn-optimize-its-title">优化并禁用 Lenovo ITS</div>
-              <div class="action-desc" id="btn-optimize-its-desc">同时禁用 Lenovo ITS Power Mode Control 服务。</div>
+              <div class="action-title" id="btn-optimize-its-title">同步 + 禁用 Lenovo ITS</div>
+              <div class="action-desc" id="btn-optimize-its-desc">在同步基础上禁用 ITS 服务。</div>
             </button>
-            <button id="btn-reset" type="button" class="action danger">
-              <div class="action-title" id="btn-reset-title">重置并恢复 Lenovo ITS</div>
-              <div class="action-desc" id="btn-reset-desc">恢复系统默认电源计划并尝试恢复 Lenovo ITS。</div>
+            <button id="btn-autotask-install" type="button" class="action primary">
+              <div class="action-title" id="btn-autotask-install-title">安装自动回写任务</div>
+              <div class="action-desc" id="btn-autotask-install-desc">登录/唤醒/电源切换后自动重写 AC=DC。</div>
+            </button>
+            <button id="btn-autotask-remove" type="button" class="action">
+              <div class="action-title" id="btn-autotask-remove-title">移除自动回写任务</div>
+              <div class="action-desc" id="btn-autotask-remove-desc">删除本工具创建的计划任务。</div>
+            </button>
+            <button id="btn-reset" type="button" class="action danger wide">
+              <div class="action-title" id="btn-reset-title">恢复默认电源计划</div>
+              <div class="action-desc" id="btn-reset-desc">还原 Windows 默认方案并尝试恢复 ITS。</div>
             </button>
           </div>
         </section>
