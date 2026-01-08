@@ -16,6 +16,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const DEFAULT_BALANCED_GUID: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
+const SUB_PROCESSOR_GUID: &str = "54533251-82be-4824-96c1-47b60b740d00";
 const SUB_SLEEP_GUID: &str = "238c9fa8-0aad-41ed-83f4-97be242c8f20";
 const ITS_POWER_MODE_CONTROL_DISPLAY_NAME: &str = "Lenovo ITS Power Mode Control";
 const AUTO_APPLY_TASK_LOGON: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnLogon";
@@ -67,6 +68,22 @@ struct ResetResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProcessorAlignItem {
+    setting_guid: String,
+    ac_value: u32,
+    dc_value: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProcessorAlignResult {
+    scheme_guid: String,
+    total: u32,
+    same: u32,
+    different: u32,
+    differences: Vec<ProcessorAlignItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ServiceActionResult {
     display_name: String,
     service_name: Option<String>,
@@ -113,6 +130,14 @@ struct DcSetting {
     dc_value: u32,
 }
 
+#[derive(Debug, Clone)]
+struct AcDcSetting {
+    subgroup_guid: String,
+    setting_guid: String,
+    ac_value: u32,
+    dc_value: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BaselineSetting {
     subgroup_guid: String,
@@ -130,6 +155,43 @@ struct BaselineFile {
 fn list_power_plans() -> Result<Vec<PowerPlan>, String> {
     let output = run_capture("powercfg", &["/list"])?;
     Ok(parse_powercfg_list(&output))
+}
+
+#[tauri::command]
+fn check_processor_ac_dc_alignment() -> Result<ProcessorAlignResult, String> {
+    let scheme_guid = get_active_scheme_guid()?;
+    let output = run_capture(
+        "powercfg",
+        &["/query", scheme_guid.as_str(), SUB_PROCESSOR_GUID],
+    )?;
+    let settings = parse_ac_dc_settings_from_query(&output);
+
+    let mut same = 0u32;
+    let mut different = 0u32;
+    let mut differences = Vec::new();
+
+    for setting in settings {
+        if setting.ac_value == setting.dc_value {
+            same += 1;
+        } else {
+            different += 1;
+            differences.push(ProcessorAlignItem {
+                setting_guid: setting.setting_guid,
+                ac_value: setting.ac_value,
+                dc_value: setting.dc_value,
+            });
+        }
+    }
+
+    let total = same + different;
+
+    Ok(ProcessorAlignResult {
+        scheme_guid,
+        total,
+        same,
+        different,
+        differences,
+    })
 }
 
 #[tauri::command]
@@ -582,6 +644,86 @@ fn parse_dc_settings_from_query(text: &str) -> Vec<DcSetting> {
             });
         }
     }
+
+    out
+}
+
+fn parse_ac_dc_settings_from_query(text: &str) -> Vec<AcDcSetting> {
+    let subgroup_re = Regex::new(
+        r"(?i)(Subgroup GUID|\u{5b50}\u{7ec4} GUID):\s*([0-9a-f-]{36})",
+    )
+    .unwrap();
+    let setting_re = Regex::new(
+        r"(?i)(Power Setting GUID|\u{7535}\u{6e90}\u{8bbe}\u{7f6e} GUID):\s*([0-9a-f-]{36})",
+    )
+    .unwrap();
+    let ac_re = Regex::new(
+        r"(?i)(Current AC Power Setting Index|\u{5f53}\u{524d}\u{4ea4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7f6e}\u{7d22}\u{5f15}):\s*0x([0-9a-f]+)",
+    )
+    .unwrap();
+    let dc_re = Regex::new(
+        r"(?i)(Current DC Power Setting Index|\u{5f53}\u{524d}\u{76f4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7f6e}\u{7d22}\u{5f15}):\s*0x([0-9a-f]+)",
+    )
+    .unwrap();
+
+    let mut out = Vec::new();
+    let mut subgroup: Option<String> = None;
+    let mut setting: Option<String> = None;
+    let mut ac_value: Option<u32> = None;
+    let mut dc_value: Option<u32> = None;
+
+    let mut flush = |out: &mut Vec<AcDcSetting>,
+                     subgroup: &mut Option<String>,
+                     setting: &mut Option<String>,
+                     ac_value: &mut Option<u32>,
+                     dc_value: &mut Option<u32>| {
+        if let (Some(subgroup), Some(setting), Some(ac_value), Some(dc_value)) =
+            (subgroup.clone(), setting.clone(), *ac_value, *dc_value)
+        {
+            out.push(AcDcSetting {
+                subgroup_guid: subgroup,
+                setting_guid: setting,
+                ac_value,
+                dc_value,
+            });
+        }
+        *setting = None;
+        *ac_value = None;
+        *dc_value = None;
+    };
+
+    for line in text.lines() {
+        if let Some(c) = subgroup_re.captures(line) {
+            flush(&mut out, &mut subgroup, &mut setting, &mut ac_value, &mut dc_value);
+            subgroup = Some(c.get(2).unwrap().as_str().to_string());
+            continue;
+        }
+        if let Some(c) = setting_re.captures(line) {
+            flush(&mut out, &mut subgroup, &mut setting, &mut ac_value, &mut dc_value);
+            setting = Some(c.get(2).unwrap().as_str().to_string());
+            continue;
+        }
+        if let Some(c) = ac_re.captures(line) {
+            if let Some(value) = c
+                .get(2)
+                .and_then(|m| u32::from_str_radix(m.as_str(), 16).ok())
+            {
+                ac_value = Some(value);
+            }
+            continue;
+        }
+        if let Some(c) = dc_re.captures(line) {
+            if let Some(value) = c
+                .get(2)
+                .and_then(|m| u32::from_str_radix(m.as_str(), 16).ok())
+            {
+                dc_value = Some(value);
+            }
+            continue;
+        }
+    }
+
+    flush(&mut out, &mut subgroup, &mut setting, &mut ac_value, &mut dc_value);
 
     out
 }
@@ -1089,6 +1231,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             list_power_plans,
+            check_processor_ac_dc_alignment,
             backup_power_plans_to_desktop,
             optimize_active_power_plan,
             reset_power_plans_and_restore_its,

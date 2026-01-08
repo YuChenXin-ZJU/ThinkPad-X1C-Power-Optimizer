@@ -40,6 +40,18 @@ type TaskInstallResult = {
 type TaskRemoveResult = {
   tasks: TaskItemResult[];
 };
+type ProcessorAlignItem = {
+  setting_guid: string;
+  ac_value: number;
+  dc_value: number;
+};
+type ProcessorAlignResult = {
+  scheme_guid: string;
+  total: number;
+  same: number;
+  different: number;
+  differences: ProcessorAlignItem[];
+};
 
 type Lang = "zh" | "en" | "ja";
 
@@ -97,6 +109,16 @@ const STRINGS: Record<
     autoTaskInstallDesc: "登录/唤醒/电源切换后自动对齐，并启动后台守护保持 AC=DC。",
     autoTaskRemoveTitle: "移除自动回写",
     autoTaskRemoveDesc: "删除本工具创建的计划任务。",
+    checkAlignTitle: "\u68c0\u67e5 AC/DC \u6838\u5fc3\u8bbe\u7f6e\u4e00\u81f4\u6027",
+    checkAlignDesc: "\u5bf9\u6bd4\u5f53\u524d\u65b9\u6848\u7684\u5904\u7406\u5668 AC/DC \u53c2\u6570\u662f\u5426\u4e00\u81f4\u3002",
+    entryCheckAlign: "AC/DC \u6838\u5fc3\u4e00\u81f4\u6027\u68c0\u67e5",
+    colSetting: "\u8bbe\u7f6e",
+    colAc: "AC",
+    colDc: "DC",
+    total: "\u603b\u6570",
+    same: "\u4e00\u81f4",
+    different: "\u4e0d\u4e00\u81f4",
+    allMatched: "\u5f53\u524d AC \u4e0e DC \u5168\u90e8\u4e00\u81f4",
     resetTitle: "恢复默认电源计划",
     resetDesc: "还原 Windows 默认方案并尝试恢复 ITS。",
     entryPlans: "电源计划列表",
@@ -151,6 +173,16 @@ const STRINGS: Record<
       "Reapply on logon/resume/power change and keep a background watcher.",
     autoTaskRemoveTitle: "Remove auto reapply",
     autoTaskRemoveDesc: "Delete tasks created by this tool.",
+    checkAlignTitle: "Check AC/DC processor alignment",
+    checkAlignDesc: "Compare AC and DC processor settings for the active plan.",
+    entryCheckAlign: "AC/DC alignment check",
+    colSetting: "Setting",
+    colAc: "AC",
+    colDc: "DC",
+    total: "Total",
+    same: "Match",
+    different: "Different",
+    allMatched: "All AC/DC values match",
     resetTitle: "Restore default power plans",
     resetDesc: "Restore Windows defaults and try to re-enable ITS.",
     entryPlans: "Power plan list",
@@ -205,6 +237,16 @@ const STRINGS: Record<
       "ログオン/復帰/電源切替後に再適用し、バックグラウンドで監視を継続します。",
     autoTaskRemoveTitle: "自動再適用を削除",
     autoTaskRemoveDesc: "本ツールが作成したタスクを削除します。",
+    checkAlignTitle: "AC/DC \u30b3\u30a2\u8a2d\u5b9a\u306e\u4e00\u81f4\u3092\u78ba\u8a8d",
+    checkAlignDesc: "\u73fe\u5728\u306e\u30d7\u30e9\u30f3\u306e\u30d7\u30ed\u30bb\u30c3\u30b5 AC/DC \u8a2d\u5b9a\u3092\u6bd4\u8f03\u3057\u307e\u3059\u3002",
+    entryCheckAlign: "AC/DC \u4e00\u81f4\u30c1\u30a7\u30c3\u30af",
+    colSetting: "\u8a2d\u5b9a",
+    colAc: "AC",
+    colDc: "DC",
+    total: "\u5408\u8a08",
+    same: "\u4e00\u81f4",
+    different: "\u4e0d\u4e00\u81f4",
+    allMatched: "AC/DC \u304c\u3059\u3079\u3066\u4e00\u81f4\u3057\u3066\u3044\u307e\u3059",
     resetTitle: "既定プランを復元",
     resetDesc: "Windows 既定に戻し ITS を復元します。",
     entryPlans: "電源プラン一覧",
@@ -251,6 +293,10 @@ function nowTime(): string {
   return d.toLocaleString();
 }
 
+function formatHexValue(value: number): string {
+  return `${value} (0x${value.toString(16)})`;
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},
@@ -281,6 +327,8 @@ window.addEventListener("DOMContentLoaded", () => {
     document.querySelector<HTMLButtonElement>("#btn-autotask-install");
   const btnAutoTaskRemove =
     document.querySelector<HTMLButtonElement>("#btn-autotask-remove");
+  const btnCheckAlign =
+    document.querySelector<HTMLButtonElement>("#btn-check-align");
   const btnReset = document.querySelector<HTMLButtonElement>("#btn-reset");
 
   const btnLangZh = document.querySelector<HTMLButtonElement>("#lang-zh");
@@ -326,6 +374,8 @@ window.addEventListener("DOMContentLoaded", () => {
     setText("btn-autotask-install-desc", t("autoTaskInstallDesc"));
     setText("btn-autotask-remove-title", t("autoTaskRemoveTitle"));
     setText("btn-autotask-remove-desc", t("autoTaskRemoveDesc"));
+    setText("btn-check-align-title", t("checkAlignTitle"));
+    setText("btn-check-align-desc", t("checkAlignDesc"));
     setText("btn-reset-title", t("resetTitle"));
     setText("btn-reset-desc", t("resetDesc"));
 
@@ -488,6 +538,7 @@ window.addEventListener("DOMContentLoaded", () => {
       btnOptimizeIts,
       btnAutoTaskInstall,
       btnAutoTaskRemove,
+      btnCheckAlign,
       btnReset,
     ];
     for (const b of buttons) {
@@ -724,6 +775,63 @@ window.addEventListener("DOMContentLoaded", () => {
         appendEntry(t("entryAutoTaskRemove"), renderTaskTable(res.tasks));
       } catch (e) {
         appendEntry(t("entryAutoTaskRemove"), el("div", { class: "fail" }, [String(e)]));
+      } finally {
+        setBusy(false);
+      }
+    });
+  });
+
+  btnCheckAlign?.addEventListener("click", () => {
+    runWithDisclaimer(async () => {
+      setBusy(true);
+      try {
+        const res = await invoke<ProcessorAlignResult>("check_processor_ac_dc_alignment");
+        const explain = planExplain(lang, res.scheme_guid);
+        const scheme = el("div", {}, [
+          el("div", {}, [
+            el("span", { class: "badge" }, [explain ? explain.title : res.scheme_guid]),
+            el("span", { class: "mono", style: "margin-left:10px;" }, [res.scheme_guid]),
+          ]),
+          explain ? el("div", { class: "muted small" }, [explain.desc]) : el("span"),
+        ]);
+
+        const stats = el("div", { class: "row-wrap" }, [
+          el("span", { class: "badge" }, [`${t("total")}: ${res.total}`]),
+          el("span", { class: "badge ok" }, [`${t("same")}: ${res.same}`]),
+          el("span", { class: `badge ${res.different === 0 ? "ok" : "fail"}` }, [
+            `${t("different")}: ${res.different}`,
+          ]),
+        ]);
+
+        let detail: Node;
+        if (res.differences.length === 0) {
+          detail = el("span", { class: "badge ok" }, [t("allMatched")]);
+        } else {
+          const table = el("table", { class: "table" }, []);
+          const thead = el("thead", {}, [
+            el("tr", {}, [
+              el("th", {}, [t("colSetting")]),
+              el("th", {}, [t("colAc")]),
+              el("th", {}, [t("colDc")]),
+            ]),
+          ]);
+          const tbody = el("tbody", {}, []);
+          for (const item of res.differences) {
+            tbody.append(
+              el("tr", {}, [
+                el("td", {}, [el("span", { class: "mono" }, [item.setting_guid])]),
+                el("td", {}, [formatHexValue(item.ac_value)]),
+                el("td", {}, [formatHexValue(item.dc_value)]),
+              ]),
+            );
+          }
+          table.append(thead, tbody);
+          detail = table;
+        }
+
+        appendEntry(t("entryCheckAlign"), el("div", {}, [scheme, stats, detail]));
+      } catch (e) {
+        appendEntry(t("entryCheckAlign"), el("div", { class: "fail" }, [String(e)]));
       } finally {
         setBusy(false);
       }
