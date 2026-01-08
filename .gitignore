@@ -17,7 +17,6 @@ src-tauri/target
 src-tauri/target/**
 *.pdb
 *.d
-*.exe
 
 # Editor directories and files
 .vscode/*
