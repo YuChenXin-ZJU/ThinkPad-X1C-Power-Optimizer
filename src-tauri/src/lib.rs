@@ -24,6 +24,7 @@ const AUTO_APPLY_TASK_POWERSRC: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnPowerS
 const AUTO_APPLY_TASK_WATCHDOG: &str = "\\ThinkPadX1PowerOptimize\\ApplyWatchdog";
 const AUTO_APPLY_SCRIPT_NAME: &str = "apply-ac-equals-dc.ps1";
 const AUTO_APPLY_WATCH_SCRIPT_NAME: &str = "apply-ac-equals-dc-watch.ps1";
+const AUTO_APPLY_BASELINE_NAME: &str = "baseline.json";
 const AUTO_APPLY_DIR_NAME: &str = ".Thinkpad_Power";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +113,19 @@ struct DcSetting {
     dc_value: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BaselineSetting {
+    subgroup_guid: String,
+    setting_guid: String,
+    value: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BaselineFile {
+    scheme_guid: String,
+    settings: Vec<BaselineSetting>,
+}
+
 #[tauri::command]
 fn list_power_plans() -> Result<Vec<PowerPlan>, String> {
     let output = run_capture("powercfg", &["/list"])?;
@@ -171,6 +185,12 @@ fn optimize_active_power_plan(disable_its: bool) -> Result<OptimizeResult, Strin
     let mut failed = 0u32;
     let mut skipped_sleep = 0u32;
     let mut messages = Vec::new();
+
+    if let Err(e) = write_baseline_file(&scheme_guid, &settings) {
+        if messages.len() < 20 {
+            messages.push(format!("保存基准失败: {}", e));
+        }
+    }
 
     for s in settings {
         if s.subgroup_guid.eq_ignore_ascii_case(SUB_SLEEP_GUID) {
@@ -240,6 +260,17 @@ fn reset_power_plans_and_restore_its() -> Result<ResetResult, String> {
 fn install_auto_apply_tasks() -> Result<TaskInstallResult, String> {
     let script_path = ensure_auto_apply_script()?;
     let watch_script_path = ensure_auto_apply_watch_script()?;
+    if let Ok(path) = baseline_path() {
+        if !path.exists() {
+            if let Ok(scheme_guid) = get_active_scheme_guid() {
+                if let Ok(query_output) = run_capture("powercfg", &["/query", scheme_guid.as_str()])
+                {
+                    let settings = parse_dc_settings_from_query(&query_output);
+                    let _ = write_baseline_file(&scheme_guid, &settings);
+                }
+            }
+        }
+    }
 
     let mut tasks = Vec::new();
     let task_specs = vec![
@@ -575,22 +606,17 @@ fn ensure_auto_apply_watch_script() -> Result<PathBuf, String> {
 fn write_auto_apply_script(name: &str, loop_mode: bool) -> Result<PathBuf, String> {
     let base_dir = ensure_auto_apply_dir()?;
     let script_path = base_dir.join(name);
-    let script = build_auto_apply_script(loop_mode);
+    let script = build_auto_apply_script(loop_mode, &base_dir);
     fs::write(&script_path, script).map_err(|e| format!("Write script failed: {e}"))?;
     fs::metadata(&script_path).map_err(|e| format!("Verify script failed: {e}"))?;
     Ok(script_path)
 }
 
-fn build_auto_apply_script(loop_mode: bool) -> String {
+fn build_auto_apply_script(loop_mode: bool, base_dir: &Path) -> String {
     let loop_block = if loop_mode {
-        "while ($true) {
-  Invoke-Apply
-  Start-Sleep -Seconds 5
-}
-".to_string()
+        "while ($true) {\n  Invoke-Apply\n  Start-Sleep -Seconds 2\n}\n".to_string()
     } else {
-        "Invoke-Apply
-".to_string()
+        "Invoke-Apply\n".to_string()
     };
 
     let zh_subgroup = "\u{5b50}\u{7ec4} GUID";
@@ -610,44 +636,78 @@ fn build_auto_apply_script(loop_mode: bool) -> String {
         zh_dc
     );
 
+    let base_dir_literal = base_dir.to_string_lossy().replace('\'', "''");
+
     format!(
         r#"$ErrorActionPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"
 
 $subSleep = "{sub_sleep}"
+$baseDir = '{base_dir}'
+$baselinePath = Join-Path $baseDir 'baseline.json'
+
 function Invoke-Apply {{
+  $scheme = $null
   $schemeText = powercfg /getactivescheme
   if ($schemeText -match "(?i)([0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}})") {{
     $scheme = $Matches[1]
-  }} else {{
+  }}
+
+  $baseline = $null
+  if (Test-Path $baselinePath) {{
+    try {{
+      $baseline = Get-Content $baselinePath -Raw | ConvertFrom-Json
+    }} catch {{
+      $baseline = $null
+    }}
+  }}
+  if ($baseline -and $baseline.scheme_guid) {{
+    $scheme = $baseline.scheme_guid
+  }}
+  if (-not $scheme) {{
     return
   }}
 
-  $query = powercfg /query $scheme
-  $subgroup = $null
-  $setting = $null
   $updates = New-Object System.Collections.Generic.List[Object]
 
-  foreach ($line in ($query -split "`r?`n")) {{
-    if ($line -match "{subgroup_pattern}") {{
-      $subgroup = $Matches[2]
-      $setting = $null
-      continue
-    }}
-    if ($line -match "{setting_pattern}") {{
-      $setting = $Matches[2]
-      continue
-    }}
-    if ($line -match "{dc_pattern}") {{
+  if ($baseline -and $baseline.settings) {{
+    foreach ($item in $baseline.settings) {{
+      $subgroup = $item.subgroup_guid
+      $setting = $item.setting_guid
       if (-not $subgroup -or -not $setting) {{ continue }}
       if ($subgroup -ieq $subSleep) {{ continue }}
-      $dc = [Convert]::ToInt32($Matches[2], 16)
-      $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$dc }}) | Out-Null
+      $value = [Convert]::ToInt32($item.value)
+      $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$value; ApplyDc=$true }}) | Out-Null
+    }}
+  }} else {{
+    $query = powercfg /query $scheme
+    $subgroup = $null
+    $setting = $null
+
+    foreach ($line in ($query -split "`r?`n")) {{
+      if ($line -match "{subgroup_pattern}") {{
+        $subgroup = $Matches[2]
+        $setting = $null
+        continue
+      }}
+      if ($line -match "{setting_pattern}") {{
+        $setting = $Matches[2]
+        continue
+      }}
+      if ($line -match "{dc_pattern}") {{
+        if (-not $subgroup -or -not $setting) {{ continue }}
+        if ($subgroup -ieq $subSleep) {{ continue }}
+        $dc = [Convert]::ToInt32($Matches[2], 16)
+        $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$dc; ApplyDc=$false }}) | Out-Null
+      }}
     }}
   }}
 
   foreach ($u in $updates) {{
     powercfg /setacvalueindex $scheme $u.Subgroup $u.Setting $u.Value | Out-Null
+    if ($u.ApplyDc) {{
+      powercfg /setdcvalueindex $scheme $u.Subgroup $u.Setting $u.Value | Out-Null
+    }}
   }}
   powercfg /setactive $scheme | Out-Null
 }}
@@ -658,6 +718,7 @@ function Invoke-Apply {{
         subgroup_pattern = subgroup_pattern,
         setting_pattern = setting_pattern,
         dc_pattern = dc_pattern,
+        base_dir = base_dir_literal,
         loop_block = loop_block,
     )
 }
@@ -668,6 +729,33 @@ fn ensure_auto_apply_dir() -> Result<PathBuf, String> {
     let dir = Path::new(&user_profile).join(AUTO_APPLY_DIR_NAME);
     fs::create_dir_all(&dir).map_err(|e| format!("鍒涘缓鑴氭湰鐩綍澶辫触: {e}"))?;
     Ok(dir)
+}
+
+fn baseline_path() -> Result<PathBuf, String> {
+    let base_dir = ensure_auto_apply_dir()?;
+    Ok(base_dir.join(AUTO_APPLY_BASELINE_NAME))
+}
+
+fn write_baseline_file(scheme_guid: &str, settings: &[DcSetting]) -> Result<PathBuf, String> {
+    let mut out = Vec::new();
+    for s in settings {
+        if s.subgroup_guid.eq_ignore_ascii_case(SUB_SLEEP_GUID) {
+            continue;
+        }
+        out.push(BaselineSetting {
+            subgroup_guid: s.subgroup_guid.clone(),
+            setting_guid: s.setting_guid.clone(),
+            value: s.dc_value,
+        });
+    }
+    let baseline = BaselineFile {
+        scheme_guid: scheme_guid.to_string(),
+        settings: out,
+    };
+    let json = serde_json::to_string_pretty(&baseline).map_err(|e| e.to_string())?;
+    let path = baseline_path()?;
+    fs::write(&path, json).map_err(|e| format!("写入基准配置失败: {e}"))?;
+    Ok(path)
 }
 
 fn ps_quote(value: &str) -> String {
