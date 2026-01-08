@@ -21,7 +21,9 @@ const ITS_POWER_MODE_CONTROL_DISPLAY_NAME: &str = "Lenovo ITS Power Mode Control
 const AUTO_APPLY_TASK_LOGON: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnLogon";
 const AUTO_APPLY_TASK_RESUME: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnResume";
 const AUTO_APPLY_TASK_POWERSRC: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnPowerSource";
+const AUTO_APPLY_TASK_WATCHDOG: &str = "\\ThinkPadX1PowerOptimize\\ApplyWatchdog";
 const AUTO_APPLY_SCRIPT_NAME: &str = "apply-ac-equals-dc.ps1";
+const AUTO_APPLY_WATCH_SCRIPT_NAME: &str = "apply-ac-equals-dc-watch.ps1";
 const AUTO_APPLY_DIR_NAME: &str = ".Thinkpad_Power";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +97,12 @@ struct TaskInstallResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TaskRemoveResult {
     tasks: Vec<TaskItemResult>,
+}
+
+#[derive(Debug, Clone)]
+enum TaskTrigger {
+    Logon,
+    Event { subscription: String },
 }
 
 #[derive(Debug, Clone)]
@@ -231,71 +239,51 @@ fn reset_power_plans_and_restore_its() -> Result<ResetResult, String> {
 #[tauri::command]
 fn install_auto_apply_tasks() -> Result<TaskInstallResult, String> {
     let script_path = ensure_auto_apply_script()?;
-    let task_cmd = format!(
-        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{}\"",
-        script_path.to_string_lossy()
-    );
+    let watch_script_path = ensure_auto_apply_watch_script()?;
 
     let mut tasks = Vec::new();
     let task_specs = vec![
         (
             AUTO_APPLY_TASK_LOGON,
-            vec!["/SC", "ONLOGON"],
+            TaskTrigger::Logon,
+            script_path.clone(),
+            false,
         ),
         (
             AUTO_APPLY_TASK_RESUME,
-            vec![
-                "/SC",
-                "ONEVENT",
-                "/EC",
-                "System",
-                "/MO",
-                "*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and (EventID=1)]]",
-            ],
+            TaskTrigger::Event {
+                subscription: "*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and (EventID=1)]]"
+                    .to_string(),
+            },
+            script_path.clone(),
+            false,
         ),
         (
             AUTO_APPLY_TASK_POWERSRC,
-            vec![
-                "/SC",
-                "ONEVENT",
-                "/EC",
-                "System",
-                "/MO",
-                "*[System[Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=105)]]",
-            ],
+            TaskTrigger::Event {
+                subscription: "*[System[Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=105)]]"
+                    .to_string(),
+            },
+            script_path.clone(),
+            false,
+        ),
+        (
+            AUTO_APPLY_TASK_WATCHDOG,
+            TaskTrigger::Logon,
+            watch_script_path,
+            true,
         ),
     ];
 
-    for (name, schedule_args) in task_specs {
-        let mut args: Vec<String> = vec![
-            "/Create".to_string(),
-            "/F".to_string(),
-            "/TN".to_string(),
-            name.to_string(),
-            "/RL".to_string(),
-            "HIGHEST".to_string(),
-            "/RU".to_string(),
-            "SYSTEM".to_string(),
-            "/TR".to_string(),
-            task_cmd.clone(),
-        ];
-        for a in schedule_args {
-            args.push(a.to_string());
-        }
-
-        match run_capture_dynamic("schtasks", &args) {
-            Ok(_) => match verify_task_exists(name) {
-                Ok(_) => tasks.push(TaskItemResult {
-                    name: name.to_string(),
-                    ok: true,
-                    error: None,
-                }),
-                Err(e) => tasks.push(TaskItemResult {
-                    name: name.to_string(),
-                    ok: false,
-                    error: Some(e),
-                }),
-            },
+    for (name, trigger, path, run_forever) in task_specs {
+        let result = register_task_with_powershell(name, &trigger, &path, run_forever)
+            .and_then(|_| verify_task_exists(name));
+        match result {
+            Ok(_) => tasks.push(TaskItemResult {
+                name: name.to_string(),
+                ok: true,
+                error: None,
+            }),
             Err(e) => tasks.push(TaskItemResult {
                 name: name.to_string(),
                 ok: false,
@@ -317,10 +305,11 @@ fn remove_auto_apply_tasks() -> Result<TaskRemoveResult, String> {
         AUTO_APPLY_TASK_LOGON,
         AUTO_APPLY_TASK_RESUME,
         AUTO_APPLY_TASK_POWERSRC,
+        AUTO_APPLY_TASK_WATCHDOG,
     ];
 
     for name in names {
-        match run_capture("schtasks", &["/Delete", "/F", "/TN", name]) {
+        match unregister_task_with_powershell(name) {
             Ok(_) => tasks.push(TaskItemResult {
                 name: name.to_string(),
                 ok: true,
@@ -562,53 +551,101 @@ fn ensure_app_desktop_dir() -> Result<PathBuf, String> {
 }
 
 fn ensure_auto_apply_script() -> Result<PathBuf, String> {
+    write_auto_apply_script(AUTO_APPLY_SCRIPT_NAME, false)
+}
+
+fn ensure_auto_apply_watch_script() -> Result<PathBuf, String> {
+    write_auto_apply_script(AUTO_APPLY_WATCH_SCRIPT_NAME, true)
+}
+
+fn write_auto_apply_script(name: &str, loop_mode: bool) -> Result<PathBuf, String> {
     let base_dir = ensure_auto_apply_dir()?;
-    let script_path = base_dir.join(AUTO_APPLY_SCRIPT_NAME);
-    let script = format!(
-        r#"$ErrorActionPreference = "SilentlyContinue"
+    let script_path = base_dir.join(name);
+    let script = build_auto_apply_script(loop_mode);
+    fs::write(&script_path, script).map_err(|e| format!("Write script failed: {e}"))?;
+    fs::metadata(&script_path).map_err(|e| format!("Verify script failed: {e}"))?;
+    Ok(script_path)
+}
 
-$subSleep = "{sub_sleep}"
-$schemeText = powercfg /getactivescheme
-if ($schemeText -match "(?i)([0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}})") {{
-  $scheme = $Matches[1]
-}} else {{
-  exit 1
-}}
+fn build_auto_apply_script(loop_mode: bool) -> String {
+    let loop_block = if loop_mode {
+        "while ($true) {
+  Invoke-Apply
+  Start-Sleep -Seconds 5
+}
+".to_string()
+    } else {
+        "Invoke-Apply
+".to_string()
+    };
 
-$query = powercfg /query $scheme
-$subgroup = $null
-$setting = $null
-$updates = New-Object System.Collections.Generic.List[Object]
+    let zh_subgroup = "\u{5b50}\u{7ec4} GUID";
+    let zh_setting = "\u{7535}\u{6e90}\u{8bbe}\u{7f6e} GUID";
+    let zh_dc = "\u{5f53}\u{524d}\u{76f4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7f6e}\u{7d22}\u{5f15}";
 
-foreach ($line in ($query -split "`r?`n")) {{
-  if ($line -match "(?i)(Subgroup GUID|子组 GUID):\\s*([0-9a-f-]{{36}})") {{
-    $subgroup = $Matches[2]
-    $setting = $null
-    continue
-  }}
-  if ($line -match "(?i)(Power Setting GUID|电源设置 GUID):\\s*([0-9a-f-]{{36}})") {{
-    $setting = $Matches[2]
-    continue
-  }}
-  if ($line -match "(?i)(Current DC Power Setting Index|当前直流电源设置索引):\\s*0x([0-9a-f]+)") {{
-    if (-not $subgroup -or -not $setting) {{ continue }}
-    if ($subgroup -ieq $subSleep) {{ continue }}
-    $dc = [Convert]::ToInt32($Matches[2], 16)
-    $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$dc }}) | Out-Null
-  }}
-}}
-
-foreach ($u in $updates) {{
-  powercfg /setacvalueindex $scheme $u.Subgroup $u.Setting $u.Value | Out-Null
-}}
-powercfg /setactive $scheme | Out-Null
-"#,
-        sub_sleep = SUB_SLEEP_GUID
+    let subgroup_pattern = format!(
+        r"(?i)(Subgroup GUID|{}):\s*([0-9a-f-]{{36}})",
+        zh_subgroup
+    );
+    let setting_pattern = format!(
+        r"(?i)(Power Setting GUID|{}):\s*([0-9a-f-]{{36}})",
+        zh_setting
+    );
+    let dc_pattern = format!(
+        r"(?i)(Current DC Power Setting Index|{}):\s*0x([0-9a-f]+)",
+        zh_dc
     );
 
-    fs::write(&script_path, script).map_err(|e| format!("鍐欏叆鑴氭湰澶辫触: {e}"))?;
-    fs::metadata(&script_path).map_err(|e| format!("鏃犳硶纭鑴氭湰: {e}"))?;
-    Ok(script_path)
+    format!(
+        r#"$ErrorActionPreference = "SilentlyContinue"
+$ProgressPreference = "SilentlyContinue"
+
+$subSleep = "{sub_sleep}"
+function Invoke-Apply {{
+  $schemeText = powercfg /getactivescheme
+  if ($schemeText -match "(?i)([0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}})") {{
+    $scheme = $Matches[1]
+  }} else {{
+    return
+  }}
+
+  $query = powercfg /query $scheme
+  $subgroup = $null
+  $setting = $null
+  $updates = New-Object System.Collections.Generic.List[Object]
+
+  foreach ($line in ($query -split "`r?`n")) {{
+    if ($line -match "{subgroup_pattern}") {{
+      $subgroup = $Matches[2]
+      $setting = $null
+      continue
+    }}
+    if ($line -match "{setting_pattern}") {{
+      $setting = $Matches[2]
+      continue
+    }}
+    if ($line -match "{dc_pattern}") {{
+      if (-not $subgroup -or -not $setting) {{ continue }}
+      if ($subgroup -ieq $subSleep) {{ continue }}
+      $dc = [Convert]::ToInt32($Matches[2], 16)
+      $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$dc }}) | Out-Null
+    }}
+  }}
+
+  foreach ($u in $updates) {{
+    powercfg /setacvalueindex $scheme $u.Subgroup $u.Setting $u.Value | Out-Null
+  }}
+  powercfg /setactive $scheme | Out-Null
+}}
+
+{loop_block}
+"#,
+        sub_sleep = SUB_SLEEP_GUID,
+        subgroup_pattern = subgroup_pattern,
+        setting_pattern = setting_pattern,
+        dc_pattern = dc_pattern,
+        loop_block = loop_block,
+    )
 }
 
 fn ensure_auto_apply_dir() -> Result<PathBuf, String> {
@@ -619,9 +656,119 @@ fn ensure_auto_apply_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn verify_task_exists(name: &str) -> Result<(), String> {
-    run_capture("schtasks", &["/Query", "/TN", name]).map(|_| ())
+fn ps_quote(value: &str) -> String {
+    value.replace('\'', "''")
 }
+
+fn split_task_path_name(full: &str) -> (String, String) {
+    let trimmed = full.trim();
+    if let Some(pos) = trimmed.rfind('\\') {
+        let (path, name) = trimmed.split_at(pos + 1);
+        let path = if path.is_empty() { "\\" } else { path };
+        let name = name.trim_start_matches('\\');
+        (path.to_string(), name.to_string())
+    } else {
+        ("\\".to_string(), trimmed.to_string())
+    }
+}
+
+fn run_powershell_dynamic(script: &str) -> Result<String, String> {
+    let args = vec![
+        "-NoProfile".to_string(),
+        "-ExecutionPolicy".to_string(),
+        "Bypass".to_string(),
+        "-Command".to_string(),
+        script.to_string(),
+    ];
+    run_capture_dynamic("powershell.exe", &args)
+}
+
+fn register_task_with_powershell(
+    full_name: &str,
+    trigger: &TaskTrigger,
+    script_path: &Path,
+    run_forever: bool,
+) -> Result<(), String> {
+    let (task_path, task_name) = split_task_path_name(full_name);
+    let task_path_q = ps_quote(&task_path);
+    let task_name_q = ps_quote(&task_name);
+    let script_path_q = ps_quote(&script_path.to_string_lossy());
+    let folder_path = task_path.trim_end_matches('\\');
+
+    let folder_block = if folder_path.is_empty() || folder_path == "\\" {
+        String::new()
+    } else {
+        format!(
+            "try {{ New-ScheduledTaskFolder -Path '{}' -ErrorAction Stop | Out-Null }} catch {{ }}",
+            ps_quote(folder_path)
+        )
+    };
+
+    let trigger_block = match trigger {
+        TaskTrigger::Logon => "$trigger = New-ScheduledTaskTrigger -AtLogOn".to_string(),
+        TaskTrigger::Event { subscription } => format!(
+            "$trigger = New-ScheduledTaskTrigger -OnEvent -Subscription '{}'",
+            ps_quote(subscription)
+        ),
+    };
+
+    let settings_block = if run_forever {
+        "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Compatibility Win8"
+    } else {
+        "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -Compatibility Win8"
+    };
+
+    let script = format!(
+        r#"$ErrorActionPreference = "Stop"
+$taskPath = '{task_path}'
+$taskName = '{task_name}'
+$scriptPath = '{script_path}'
+{folder_block}
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+{settings_block}
+{trigger_block}
+function Register-Task($principal) {{
+  Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+}}
+try {{
+  $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+  Register-Task $principal
+}} catch {{
+  $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType InteractiveToken -RunLevel Highest
+  Register-Task $principal
+}}
+"#,
+        task_path = task_path_q,
+        task_name = task_name_q,
+        script_path = script_path_q,
+        folder_block = folder_block,
+        settings_block = settings_block,
+        trigger_block = trigger_block,
+    );
+
+    run_powershell_dynamic(&script).map(|_| ())
+}
+
+fn unregister_task_with_powershell(full_name: &str) -> Result<(), String> {
+    let (task_path, task_name) = split_task_path_name(full_name);
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; Unregister-ScheduledTask -TaskName '{}' -TaskPath '{}' -Confirm:$false",
+        ps_quote(&task_name),
+        ps_quote(&task_path)
+    );
+    run_powershell_dynamic(&script).map(|_| ())
+}
+
+fn verify_task_exists(name: &str) -> Result<(), String> {
+    let (task_path, task_name) = split_task_path_name(name);
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; Get-ScheduledTask -TaskName '{}' -TaskPath '{}' | Out-Null",
+        ps_quote(&task_name),
+        ps_quote(&task_path)
+    );
+    run_powershell_dynamic(&script).map(|_| ())
+}
+
 
 fn unix_timestamp() -> u64 {
     SystemTime::now()

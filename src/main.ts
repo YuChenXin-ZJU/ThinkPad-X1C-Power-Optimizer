@@ -94,7 +94,7 @@ const STRINGS: Record<
     optItsTitle: "对齐 + 禁用 Lenovo ITS（高级）",
     optItsDesc: "在对齐基础上禁用 ITS 服务，降低被写回的概率。",
     autoTaskInstallTitle: "启用自动回写（推荐）",
-    autoTaskInstallDesc: "在登录/唤醒/电源切换后自动重新对齐 AC=DC。",
+    autoTaskInstallDesc: "登录/唤醒/电源切换后自动对齐，并启动后台守护保持 AC=DC。",
     autoTaskRemoveTitle: "移除自动回写",
     autoTaskRemoveDesc: "删除本工具创建的计划任务。",
     resetTitle: "恢复默认电源计划",
@@ -147,7 +147,8 @@ const STRINGS: Record<
     optItsTitle: "Align + disable Lenovo ITS (advanced)",
     optItsDesc: "Disable ITS after aligning to reduce overrides.",
     autoTaskInstallTitle: "Enable auto reapply (recommended)",
-    autoTaskInstallDesc: "Reapply AC=DC on logon/resume/power change.",
+    autoTaskInstallDesc:
+      "Reapply on logon/resume/power change and keep a background watcher.",
     autoTaskRemoveTitle: "Remove auto reapply",
     autoTaskRemoveDesc: "Delete tasks created by this tool.",
     resetTitle: "Restore default power plans",
@@ -200,7 +201,8 @@ const STRINGS: Record<
     optItsTitle: "揃え + Lenovo ITS 無効化（上級）",
     optItsDesc: "揃えた後に ITS を無効化して上書きを減らします。",
     autoTaskInstallTitle: "自動再適用を有効化（推奨）",
-    autoTaskInstallDesc: "ログオン/復帰/電源切替後に AC=DC を再適用。",
+    autoTaskInstallDesc:
+      "ログオン/復帰/電源切替後に再適用し、バックグラウンドで監視を継続します。",
     autoTaskRemoveTitle: "自動再適用を削除",
     autoTaskRemoveDesc: "本ツールが作成したタスクを削除します。",
     resetTitle: "既定プランを復元",
