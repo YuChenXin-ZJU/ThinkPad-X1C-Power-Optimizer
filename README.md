@@ -119,6 +119,28 @@ Windows 的每个电源计划（scheme）都包含大量电源设置。大多数
 
 本软件为个人实验性质工具，可能修改系统电源计划与相关服务配置。使用本软件所产生的任何风险与后果（包括但不限于数据丢失、系统异常、硬件损坏或其他损失）均由使用者自行承担，作者不对此承担责任。建议在操作前先备份电源计划，并确认已了解相关命令含义。
 
+
+## ????????????????????
+
+??????????
+
+1. **??/????????**?PL1/PL2?C-State????????????
+2. **ACPI/Firmware ???????**?????????????
+3. **Windows Power Framework???????**??? GUID?SUB_PROCESSOR ?????????
+4. **Policy Clients???????**?Windows ?????Intel DTT/IPF?Lenovo ITS/Vantage??????
+
+?????
+
+- **?????? owner???????????**
+- ???????**?????????????**?
+- ??**????????**?????????????
+
+?????
+
+- ??????? **??/??/????** ??? AC=DC?
+- ?????? Watchdog????????????????????
+
+
 ---
 
 # English
@@ -159,6 +181,26 @@ In short: **it updates AC values only; DC values remain unchanged.**
 
 To reduce impact on sleep behavior, it skips the Sleep subgroup (Subgroup GUID: `238c9fa8-0aad-41ed-83f4-97be242c8f20`).
 
+## Power Stack & Contention (Concise)
+
+Real-world hierarchy from low to high:
+
+1. **Hardware/microcode (uncontrollable)**: PL1/PL2, C-states, thermal caps.
+2. **ACPI/Firmware (read-only to OS)**: defines allowed policy space.
+3. **Windows Power Framework (effective layer)**: all GUIDs end up here.
+4. **Policy clients (writers)**: Windows PM, Intel DTT/IPF, Lenovo ITS/Vantage, this tool.
+
+Key point:
+
+- No lock, no owner ? **last writer wins**.
+- Therefore the app must act as a **policy guardian**, not a one-time config tool.
+
+Current implementation:
+
+- Scheduled tasks re-apply AC=DC on logon/resume/power change.
+- A background watchdog keeps enforcing even after the app closes.
+
+
 ### 2) What does “Disable Lenovo ITS” do?
 
 Some Lenovo setups run a background service called **Lenovo ITS Power Mode Control**. It may override power plan values dynamically, which can undo manual changes.
@@ -186,6 +228,7 @@ The “Reset + restore Lenovo ITS” action:
 - **Smoother on AC (Admin required)**: makes plugged-in values match battery values (skips sleep subgroup).
 - **Smoother on AC + disable Lenovo ITS (Admin required)**: additionally disables Lenovo ITS Power Mode Control (restorable).
 - **Reset + restore Lenovo ITS (Admin required)**: restores defaults and attempts to restore ITS service.
+- **Auto reapply (Admin required)**: re-applies on logon/resume/power change and starts a background watchdog to keep values consistent.
 
 ## Requirements
 
