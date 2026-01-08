@@ -22,6 +22,7 @@ const AUTO_APPLY_TASK_LOGON: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnLogon";
 const AUTO_APPLY_TASK_RESUME: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnResume";
 const AUTO_APPLY_TASK_POWERSRC: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnPowerSource";
 const AUTO_APPLY_SCRIPT_NAME: &str = "apply-ac-equals-dc.ps1";
+const AUTO_APPLY_DIR_NAME: &str = ".Thinkpad_Power";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PowerPlan {
@@ -283,11 +284,18 @@ fn install_auto_apply_tasks() -> Result<TaskInstallResult, String> {
         }
 
         match run_capture_dynamic("schtasks", &args) {
-            Ok(_) => tasks.push(TaskItemResult {
-                name: name.to_string(),
-                ok: true,
-                error: None,
-            }),
+            Ok(_) => match verify_task_exists(name) {
+                Ok(_) => tasks.push(TaskItemResult {
+                    name: name.to_string(),
+                    ok: true,
+                    error: None,
+                }),
+                Err(e) => tasks.push(TaskItemResult {
+                    name: name.to_string(),
+                    ok: false,
+                    error: Some(e),
+                }),
+            },
             Err(e) => tasks.push(TaskItemResult {
                 name: name.to_string(),
                 ok: false,
@@ -554,7 +562,7 @@ fn ensure_app_desktop_dir() -> Result<PathBuf, String> {
 }
 
 fn ensure_auto_apply_script() -> Result<PathBuf, String> {
-    let base_dir = ensure_app_desktop_dir()?;
+    let base_dir = ensure_auto_apply_dir()?;
     let script_path = base_dir.join(AUTO_APPLY_SCRIPT_NAME);
     let script = format!(
         r#"$ErrorActionPreference = "SilentlyContinue"
@@ -599,7 +607,20 @@ powercfg /setactive $scheme | Out-Null
     );
 
     fs::write(&script_path, script).map_err(|e| format!("鍐欏叆鑴氭湰澶辫触: {e}"))?;
+    fs::metadata(&script_path).map_err(|e| format!("鏃犳硶纭鑴氭湰: {e}"))?;
     Ok(script_path)
+}
+
+fn ensure_auto_apply_dir() -> Result<PathBuf, String> {
+    let user_profile =
+        env::var("USERPROFILE").map_err(|_| "鏃犳硶璇诲彇 USERPROFILE 鐜鍙橀噺".to_string())?;
+    let dir = Path::new(&user_profile).join(AUTO_APPLY_DIR_NAME);
+    fs::create_dir_all(&dir).map_err(|e| format!("鍒涘缓鑴氭湰鐩綍澶辫触: {e}"))?;
+    Ok(dir)
+}
+
+fn verify_task_exists(name: &str) -> Result<(), String> {
+    run_capture("schtasks", &["/Query", "/TN", name]).map(|_| ())
 }
 
 fn unix_timestamp() -> u64 {

@@ -122,6 +122,34 @@ h1 {
   margin-top: 12px;
 }
 
+#btn-list {
+  order: 1;
+}
+
+#btn-optimize {
+  order: 2;
+}
+
+#btn-autotask-install {
+  order: 3;
+}
+
+#btn-backup {
+  order: 4;
+}
+
+#btn-optimize-its {
+  order: 5;
+}
+
+#btn-autotask-remove {
+  order: 6;
+}
+
+#btn-reset {
+  order: 7;
+}
+
 .action {
   border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 14px;
