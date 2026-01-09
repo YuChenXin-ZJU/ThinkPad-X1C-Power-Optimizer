@@ -17,7 +17,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const DEFAULT_BALANCED_GUID: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
 const SUB_PROCESSOR_GUID: &str = "54533251-82be-4824-96c1-47b60b740d00";
-const SUB_SLEEP_GUID: &str = "238c9fa8-0aad-41ed-83f4-97be242c8f20";
 const ITS_POWER_MODE_CONTROL_DISPLAY_NAME: &str = "Lenovo ITS Power Mode Control";
 const AUTO_APPLY_TASK_LOGON: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnLogon";
 const AUTO_APPLY_TASK_RESUME: &str = "\\ThinkPadX1PowerOptimize\\ApplyOnResume";
@@ -320,22 +319,27 @@ fn optimize_active_power_plan(disable_its: bool) -> Result<OptimizeResult, Strin
     let query_output = run_capture("powercfg", &["/query", scheme_guid.as_str()])?;
     let settings = parse_dc_settings_from_query(&query_output);
 
+    let mut processor_settings = Vec::new();
+    let mut skipped_non_processor = 0u32;
+    for s in settings {
+        if s.subgroup_guid.eq_ignore_ascii_case(SUB_PROCESSOR_GUID) {
+            processor_settings.push(s);
+        } else {
+            skipped_non_processor += 1;
+        }
+    }
+
     let mut updated = 0u32;
     let mut failed = 0u32;
-    let mut skipped_sleep = 0u32;
     let mut messages = Vec::new();
 
-    if let Err(e) = write_baseline_file(&scheme_guid, &settings) {
+    if let Err(e) = write_baseline_file(&scheme_guid, &processor_settings) {
         if messages.len() < 20 {
             messages.push(format!("保存基准失败: {}", e));
         }
     }
 
-    for s in settings {
-        if s.subgroup_guid.eq_ignore_ascii_case(SUB_SLEEP_GUID) {
-            skipped_sleep += 1;
-            continue;
-        }
+    for s in processor_settings {
         let dc_value = s.dc_value.to_string();
         match run_capture(
             "powercfg",
@@ -372,7 +376,7 @@ fn optimize_active_power_plan(disable_its: bool) -> Result<OptimizeResult, Strin
         scheme_guid,
         updated_settings: updated,
         failed_settings: failed,
-        skipped_sleep_settings: skipped_sleep,
+        skipped_sleep_settings: skipped_non_processor,
         services,
         messages,
     })
@@ -860,7 +864,7 @@ fn build_auto_apply_script(loop_mode: bool, base_dir: &Path) -> String {
         r#"$ErrorActionPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"
 
-$subSleep = "{sub_sleep}"
+$subProcessor = "{sub_processor}"
 $baseDir = '{base_dir}'
 $baselinePath = Join-Path $baseDir 'baseline.json'
 
@@ -893,12 +897,12 @@ function Invoke-Apply {{
       $subgroup = $item.subgroup_guid
       $setting = $item.setting_guid
       if (-not $subgroup -or -not $setting) {{ continue }}
-      if ($subgroup -ieq $subSleep) {{ continue }}
+      if ($subgroup -ine $subProcessor) {{ continue }}
       $value = [Convert]::ToInt32($item.value)
       $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$value; ApplyDc=$true }}) | Out-Null
     }}
   }} else {{
-    $query = powercfg /query $scheme
+    $query = powercfg /query $scheme $subProcessor
     $subgroup = $null
     $setting = $null
 
@@ -914,7 +918,7 @@ function Invoke-Apply {{
       }}
       if ($line -match "{dc_pattern}") {{
         if (-not $subgroup -or -not $setting) {{ continue }}
-        if ($subgroup -ieq $subSleep) {{ continue }}
+        if ($subgroup -ine $subProcessor) {{ continue }}
         $dc = [Convert]::ToInt32($Matches[2], 16)
         $updates.Add([pscustomobject]@{{ Subgroup=$subgroup; Setting=$setting; Value=$dc; ApplyDc=$false }}) | Out-Null
       }}
@@ -932,7 +936,7 @@ function Invoke-Apply {{
 
 {loop_block}
 "#,
-        sub_sleep = SUB_SLEEP_GUID,
+        sub_processor = SUB_PROCESSOR_GUID,
         subgroup_pattern = subgroup_pattern,
         setting_pattern = setting_pattern,
         dc_pattern = dc_pattern,
@@ -957,7 +961,7 @@ fn baseline_path() -> Result<PathBuf, String> {
 fn write_baseline_file(scheme_guid: &str, settings: &[DcSetting]) -> Result<PathBuf, String> {
     let mut out = Vec::new();
     for s in settings {
-        if s.subgroup_guid.eq_ignore_ascii_case(SUB_SLEEP_GUID) {
+        if !s.subgroup_guid.eq_ignore_ascii_case(SUB_PROCESSOR_GUID) {
             continue;
         }
         out.push(BaselineSetting {

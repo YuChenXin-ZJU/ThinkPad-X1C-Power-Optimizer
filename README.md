@@ -13,9 +13,9 @@
 ## 功能
 - 查看电源计划：列出所有方案并标记当前活动方案。
 - 备份电源计划（需管理员权限）：导出 `.pow`，便于回滚与迁移。
-- 插电调度对齐电池（推荐，需管理员权限）：将当前方案的 AC 值对齐 DC 值（跳过睡眠子组）。
-- 插电参数对齐电池 + 停用电源策略服务（高级，需管理员权限）：
-  - 在对齐基础上，尝试停止/禁用可能回写电源策略的服务（如 Intel DPTF/DTT、Lenovo ITS、Vantage、LISF、ImController 等）。
+- 插电处理器对齐电池（推荐，需管理员权限）：仅对齐处理器子组的 AC/DC，避免影响显示/睡眠等设置。
+- 插电处理器对齐电池 + 停用电源策略服务（高级，需管理员权限）：
+  - 在处理器对齐基础上，尝试停止/禁用可能回写电源策略的服务（如 Intel DPTF/DTT、Lenovo ITS、Vantage、LISF、ImController 等）。
   - 未安装的服务会显示“未安装”，不再报错。
 - 启用自动回写（推荐，需管理员权限）：登录/唤醒/电源切换后自动对齐，并启动后台守护。
 - AC/DC 核心一致性检查：对比处理器子组（SUB_PROCESSOR）AC/DC 值是否一致并输出差异。
@@ -50,9 +50,9 @@ It uses built-in Windows commands (`powercfg`, `sc`, `schtasks`, etc.) and does 
 ## Features
 - List power plans and mark the active scheme.
 - Backup power plans (Admin required): export `.pow` files.
-- Smoother on AC (recommended, Admin required): align AC values to DC (skips Sleep subgroup).
-- Align AC to battery + disable power policy services (advanced, Admin required):
-  - Stops/disables likely writers (e.g., Intel DPTF/DTT, Lenovo ITS, Vantage, LISF, ImController).
+- Smoother on AC (recommended, Admin required): align AC/DC values for the Processor subgroup only.
+- Align AC to battery + disable power policy services (advanced, Admin required, processor only):
+  - Aligns the Processor subgroup and stops/disables likely writers (e.g., Intel DPTF/DTT, Lenovo ITS, Vantage, LISF, ImController).
   - Services not installed are reported as “Not installed.”
 - Auto reapply (recommended, Admin required): reapply on logon/resume/power change and keep a watchdog running.
 - AC/DC processor alignment check: compare SUB_PROCESSOR AC/DC values and list differences.

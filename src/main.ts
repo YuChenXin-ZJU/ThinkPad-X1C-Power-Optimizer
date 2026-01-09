@@ -204,16 +204,16 @@ const STRINGS: Record<
 
     backupDesc: "导出 .pow 文件到桌面，便于恢复。",
 
-    optTitle: "插电调度对齐电池（推荐）",
+    optTitle: "插电处理器对齐电池（推荐）",
 
-    optDesc: "将当前计划的 AC 值对齐 DC 值，插电调度更稳定。",
+    optDesc: "仅对齐处理器子组的 AC/DC，避免影响显示/睡眠等设置。",
 
-    optItsTitle: "插电参数对齐电池 + 停用电源策略服务（高级）",
-
-
+    optItsTitle: "插电处理器对齐电池 + 停用电源策略服务（高级）",
 
 
-    optItsDesc: "对齐当前方案的 AC=DC，并尝试停止/禁用 Intel DTT、Lenovo ITS、Vantage 等服务。",
+
+
+    optItsDesc: "仅对齐处理器子组的 AC=DC，并尝试停止/禁用 Intel DTT、Lenovo ITS、Vantage 等服务。",
 
 
 
@@ -295,7 +295,7 @@ const STRINGS: Record<
 
     failed: "失败",
 
-    skippedSleep: "跳过睡眠设置",
+    skippedSleep: "跳过非处理器设置",
 
     its: "ITS 服务",
 
@@ -365,16 +365,16 @@ const STRINGS: Record<
 
     backupDesc: "Export .pow files to Desktop for restore.",
 
-    optTitle: "Align AC to battery (recommended)",
+    optTitle: "Align AC to battery (processor only)",
 
-    optDesc: "Align AC values to DC for steadier plugged-in scheduling.",
+    optDesc: "Align AC/DC values for the Processor subgroup only.",
 
-    optItsTitle: "Align AC to battery + disable power policy services (advanced)",
-
-
+    optItsTitle: "Align AC to battery + disable power policy services (advanced, processor only)",
 
 
-    optItsDesc: "Align AC=DC and try to stop/disable Intel DTT, Lenovo ITS, Vantage, etc.",
+
+
+    optItsDesc: "Align AC=DC for the Processor subgroup and try to stop/disable Intel DTT, Lenovo ITS, Vantage, etc.",
 
 
 
@@ -458,7 +458,7 @@ const STRINGS: Record<
 
     failed: "Failed",
 
-    skippedSleep: "Skipped sleep settings",
+    skippedSleep: "Skipped non-processor settings",
 
     its: "ITS service",
 
@@ -528,16 +528,16 @@ const STRINGS: Record<
 
     backupDesc: "Desktop に .pow を保存して復元に備えます。",
 
-    optTitle: "AC をバッテリーに合わせる（推奨）",
+    optTitle: "AC をバッテリーに合わせる（CPU のみ、推奨）",
 
-    optDesc: "AC 値を DC に揃えて、接続時の挙動を安定化します。",
+    optDesc: "処理器サブグループのみ AC/DC を揃えます。",
 
-    optItsTitle: "AC をバッテリーに合わせる + 電源ポリシーサービス停止（上級）",
-
-
+    optItsTitle: "AC をバッテリーに合わせる + 電源ポリシーサービス停止（上級、CPUのみ）",
 
 
-    optItsDesc: "AC=DC に揃えた後、Intel DTT / Lenovo ITS / Vantage などを停止・無効化します。",
+
+
+    optItsDesc: "処理器サブグループのみ AC=DC に揃え、Intel DTT / Lenovo ITS / Vantage などを停止・無効化します。",
 
 
 
@@ -621,7 +621,7 @@ const STRINGS: Record<
 
     failed: "失敗",
 
-    skippedSleep: "スリープ設定をスキップ",
+    skippedSleep: "非CPU設定をスキップ",
 
     its: "ITS サービス",
 
