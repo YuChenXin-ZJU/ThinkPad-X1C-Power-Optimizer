@@ -646,12 +646,15 @@ fn decode_output(bytes: &[u8]) -> String {
 }
 
 fn parse_powercfg_list(text: &str) -> Vec<PowerPlan> {
-    let guid_re = Regex::new(r"(?i)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
-        .unwrap();
-    let name_re = Regex::new(r"\(([^)]+)\)").unwrap();
+    let guid_re = Regex::new(
+        r"(?i)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    )
+    .unwrap();
+    let name_re = Regex::new(r"[（(]([^)）]+)[)）]").unwrap();
 
     let mut plans = Vec::new();
-    for line in text.lines() {
+    for raw_line in text.lines() {
+        let line = raw_line.trim_matches(|c| c == '\u{feff}' || c == '\r');
         let Some(guid_cap) = guid_re.captures(line) else {
             continue;
         };
@@ -684,14 +687,18 @@ fn get_active_scheme_guid() -> Result<String, String> {
 }
 
 fn parse_dc_settings_from_query(text: &str) -> Vec<DcSetting> {
-    let subgroup_re =
-        Regex::new(r"(?i)(子组 GUID|Subgroup GUID):\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
-            .unwrap();
-    let setting_re =
-        Regex::new(r"(?i)(电源设置 GUID|Power Setting GUID):\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
-            .unwrap();
-    let dc_re = Regex::new(r"(?i)(当前直流电源设置索引|Current DC Power Setting Index):\s*0x([0-9a-f]+)")
-        .unwrap();
+    let subgroup_re = Regex::new(
+        r"(?i)(子组 GUID|Subgroup GUID)[:：]\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    )
+    .unwrap();
+    let setting_re = Regex::new(
+        r"(?i)(电源设置 GUID|Power Setting GUID)[:：]\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    )
+    .unwrap();
+    let dc_re = Regex::new(
+        r"(?i)(当前直流电源设置索引|Current DC Power Setting Index)[:：]\s*0x([0-9a-f]+)",
+    )
+    .unwrap();
 
     let mut subgroup_guid: Option<String> = None;
     let mut setting_guid: Option<String> = None;
@@ -731,19 +738,19 @@ fn parse_dc_settings_from_query(text: &str) -> Vec<DcSetting> {
 
 fn parse_ac_dc_settings_from_query(text: &str) -> Vec<AcDcSetting> {
     let subgroup_re = Regex::new(
-        r"(?i)(Subgroup GUID|\u{5b50}\u{7ec4} GUID):\s*([0-9a-f-]{36})",
+        r"(?i)(Subgroup GUID|\u{5b50}\u{7ec4} GUID)[:：]\s*([0-9a-f-]{36})",
     )
     .unwrap();
     let setting_re = Regex::new(
-        r"(?i)(Power Setting GUID|\u{7535}\u{6e90}\u{8bbe}\u{7f6e} GUID):\s*([0-9a-f-]{36})",
+        r"(?i)(Power Setting GUID|\u{7535}\u{6e90}\u{8bbe}\u{7f6e} GUID)[:：]\s*([0-9a-f-]{36})",
     )
     .unwrap();
     let ac_re = Regex::new(
-        r"(?i)(Current AC Power Setting Index|\u{5f53}\u{524d}\u{4ea4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7f6e}\u{7d22}\u{5f15}):\s*0x([0-9a-f]+)",
+        r"(?i)(Current AC Power Setting Index|\u{5f53}\u{524d}\u{4ea4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7f6e}\u{7d22}\u{5f15})[:：]\s*0x([0-9a-f]+)",
     )
     .unwrap();
     let dc_re = Regex::new(
-        r"(?i)(Current DC Power Setting Index|\u{5f53}\u{524d}\u{76f4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7f6e}\u{7d22}\u{5f15}):\s*0x([0-9a-f]+)",
+        r"(?i)(Current DC Power Setting Index|\u{5f53}\u{524d}\u{76f4}\u{6d41}\u{7535}\u{6e90}\u{8bbe}\u{7d22}\u{5f15})[:：]\s*0x([0-9a-f]+)",
     )
     .unwrap();
 
@@ -754,12 +761,12 @@ fn parse_ac_dc_settings_from_query(text: &str) -> Vec<AcDcSetting> {
     let mut dc_value: Option<u32> = None;
 
     let flush = |out: &mut Vec<AcDcSetting>,
-                     subgroup: &mut Option<String>,
-                     setting: &mut Option<String>,
-                     ac_value: &mut Option<u32>,
-                     dc_value: &mut Option<u32>| {
-        if let (Some(_subgroup), Some(setting), Some(ac_value), Some(dc_value)) =
-            (subgroup.clone(), setting.clone(), *ac_value, *dc_value)
+                 _subgroup: &mut Option<String>,
+                 setting: &mut Option<String>,
+                 ac_value: &mut Option<u32>,
+                 dc_value: &mut Option<u32>| {
+        if let (Some(setting), Some(ac_value), Some(dc_value)) =
+            (setting.clone(), *ac_value, *dc_value)
         {
             out.push(AcDcSetting {
                 setting_guid: setting,
